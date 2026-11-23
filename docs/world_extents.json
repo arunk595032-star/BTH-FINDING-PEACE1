@@ -1,0 +1,20 @@
+{
+  "field_stats": {
+    "chunk_segments": 48,
+    "chunk_size": 128.0,
+    "chunks": 16,
+    "grid_res": 768,
+    "grid_step": 2.66666666666667,
+    "roads": 6,
+    "seed": 20260419,
+    "water_paths": 3,
+    "world_size": 2048.0
+  },
+  "height_max_m": 528.4,
+  "height_min_m": 0.3,
+  "map_pixels": 900,
+  "metres_per_pixel": 2.27808676307008,
+  "note": "Shaded relief computed from TerrainField.height(); not an engine screenshot.",
+  "render_seconds": 10.87,
+  "world_size_m": 2048.0
+}

@@ -1,0 +1,588 @@
+extends RefCounted
+## Vegetation and scatter system.
+##
+## Trees are built procedurally as two-surface meshes (bark trunk + alpha
+## foliage cards) so a dense forest stays cheap, while Poly Haven CC0 models
+## provide the hero undergrowth and rocks.  Placement is terrain-aware:
+## height, slope, water, roads and settlement pads are all respected, so
+## nothing floats and nothing grows in the river.
+
+const Config = preload("res://scripts/core/world_config.gd")
+const Terrain = preload("res://scripts/world/terrain_field.gd")
+const Mats = preload("res://scripts/core/material_library.gd")
+const Assets = preload("res://scripts/core/asset_library.gd")
+const MeshKit = preload("res://scripts/world/mesh_kit.gd")
+
+const FOLIAGE_SHADER := "res://shaders/foliage.gdshader"
+const CONIFER_TEX := "res://assets/textures/procedural/foliage/conifer_branch.png"
+const LEAF_TEX := "res://assets/textures/procedural/foliage/leaf_cluster.png"
+const GRASS_TEX := "res://assets/textures/procedural/foliage/grass_tuft.png"
+
+var field
+var meshes: Dictionary = {}
+var materials: Dictionary = {}
+var stats := {"trees": 0, "grass": 0, "rocks": 0, "props": 0, "chunks": 0}
+
+var _rng := RandomNumberGenerator.new()
+var _conifer_mat: ShaderMaterial
+var _leaf_mat: ShaderMaterial
+var _grass_mat: ShaderMaterial
+var _bark_mat: StandardMaterial3D
+var _rock_mat: StandardMaterial3D
+var _asset_meshes: Dictionary = {}
+
+
+func setup(p_field: RefCounted) -> void:
+	field = p_field
+	_build_materials()
+	meshes["conifer_a"] = _build_conifer(0, 13.0)
+	meshes["conifer_b"] = _build_conifer(1, 17.5)
+	meshes["conifer_c"] = _build_conifer(2, 9.5)
+	meshes["broadleaf"] = _build_broadleaf(0)
+	meshes["broadleaf_b"] = _build_broadleaf(1)
+	meshes["snag"] = _build_snag()
+	meshes["bush"] = _build_bush()
+	meshes["rock_a"] = _build_rock(1.0, 9)
+	meshes["rock_b"] = _build_rock(1.6, 4)
+	meshes["pebble"] = _build_rock(0.32, 21)
+	meshes["grass"] = _build_grass_card()
+	meshes["fern"] = _build_fern_card()
+
+	# Poly Haven CC0 undergrowth (real scans, used at low density near the
+	# player where their polygon budget is affordable).
+	_asset_meshes = {
+		"fern": Assets.load_mesh("res://assets/vegetation/polyhaven_fern_02/fern_02_1k.gltf"),
+		"weed": Assets.load_mesh("res://assets/vegetation/polyhaven_weed_plant_02/weed_plant_02_1k.gltf"),
+		"nettle": Assets.load_mesh("res://assets/vegetation/polyhaven_nettle_plant/nettle_plant_1k.gltf"),
+		"rooibos": Assets.load_mesh("res://assets/vegetation/polyhaven_wild_rooibos_bush/wild_rooibos_bush_1k.gltf"),
+		"trunk": Assets.load_mesh("res://assets/vegetation/polyhaven_dead_tree_trunk/dead_tree_trunk_1k.gltf"),
+		"stones": Assets.load_mesh("res://assets/rocks/polyhaven_namaqualand_stones_01/namaqualand_stones_01_1k.gltf"),
+	}
+
+
+func stats_summary() -> String:
+	return "trees %d, grass %d, rocks %d, props %d in %d chunks" % [
+		stats["trees"], stats["grass"], stats["rocks"], stats["props"], stats["chunks"]]
+
+
+# ---------------------------------------------------------------------------
+# Materials
+# ---------------------------------------------------------------------------
+func _build_materials() -> void:
+	_bark_mat = Mats.bark()
+	_rock_mat = _make_rock_material()
+	_conifer_mat = _foliage_material(CONIFER_TEX, 0.30, 0.9, Color(0.82, 0.95, 0.80))
+	_leaf_mat = _foliage_material(LEAF_TEX, 0.55, 0.82, Color(0.92, 1.0, 0.86))
+	_grass_mat = _foliage_material(GRASS_TEX, 0.22, 0.9, Color(0.95, 1.0, 0.82))
+	materials["conifer"] = _conifer_mat
+	materials["leaf"] = _leaf_mat
+	materials["grass"] = _grass_mat
+	materials["bark"] = _bark_mat
+	materials["rock"] = _rock_mat
+
+
+func _foliage_material(path: String, wind: float, rough: float, tint: Color) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load(FOLIAGE_SHADER)
+	mat.set_shader_parameter("tint", tint)
+	mat.set_shader_parameter("wind_strength", wind)
+	mat.set_shader_parameter("roughness_value", rough)
+	mat.set_shader_parameter("use_vertex_color", 1.0)
+	if ResourceLoader.exists(path):
+		mat.set_shader_parameter("albedo_tex", load(path))
+	return mat
+
+
+func _make_rock_material() -> StandardMaterial3D:
+	var m: StandardMaterial3D = Mats.stone().duplicate()
+	m.albedo_color = Color(0.92, 0.9, 0.86)
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3(0.28, 0.28, 0.28)
+	m.roughness = 0.92
+	return m
+
+
+# ---------------------------------------------------------------------------
+# Mesh construction helpers
+# ---------------------------------------------------------------------------
+func _add_surface(am: ArrayMesh, st: SurfaceTool, mat: Material) -> void:
+	st.index()
+	st.generate_tangents()
+	var m := st.commit()
+	if m == null:
+		return
+	for i in m.get_surface_count():
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, m.surface_get_arrays(i))
+		am.surface_set_material(am.get_surface_count() - 1, mat)
+
+
+func _card(st: SurfaceTool, center: Vector3, size: Vector2, basis: Basis, color: Color) -> void:
+	var right := basis.x.normalized() * size.x * 0.5
+	var up := basis.y.normalized() * size.y * 0.5
+	var n := basis.z.normalized()
+	var a := center - right - up
+	var b := center + right - up
+	var c := center + right + up
+	var d := center - right + up
+	for v in [[a, Vector2(0, 1)], [b, Vector2(1, 1)], [c, Vector2(1, 0)],
+			[a, Vector2(0, 1)], [c, Vector2(1, 0)], [d, Vector2(0, 0)]]:
+		st.set_normal(n)
+		st.set_uv(v[1])
+		st.set_color(color)
+		st.add_vertex(v[0])
+
+
+func _card_basis(dir: Vector3, tilt: float) -> Basis:
+	var up := (Vector3.UP + dir * tilt).normalized()
+	var right := dir.cross(up)
+	if right.length() < 0.01:
+		right = Vector3.RIGHT
+	right = right.normalized()
+	var normal := right.cross(up).normalized()
+	return Basis(right, up, normal)
+
+
+func _trunk(st: SurfaceTool, height: float, r0: float, r1: float, bend: Vector2,
+		segments := 7, rings := 6) -> void:
+	for i in rings:
+		var t0 := float(i) / float(rings)
+		var t1 := float(i + 1) / float(rings)
+		var y0 := t0 * height
+		var y1 := t1 * height
+		var rad0 := lerpf(r0, r1, pow(t0, 0.7))
+		var rad1 := lerpf(r0, r1, pow(t1, 0.7))
+		var off0 := bend * pow(t0, 1.7) * height * 0.06
+		var off1 := bend * pow(t1, 1.7) * height * 0.06
+		for s in segments:
+			var a0 := TAU * float(s) / float(segments)
+			var a1 := TAU * float(s + 1) / float(segments)
+			var d0 := Vector3(cos(a0), 0, sin(a0))
+			var d1 := Vector3(cos(a1), 0, sin(a1))
+			var p0 := d0 * rad0 + Vector3(off0.x, y0, off0.y)
+			var p1 := d1 * rad0 + Vector3(off0.x, y0, off0.y)
+			var p2 := d1 * rad1 + Vector3(off1.x, y1, off1.y)
+			var p3 := d0 * rad1 + Vector3(off1.x, y1, off1.y)
+			var n0 := d0
+			var n1 := d1
+			for v in [[p0, n0, Vector2(a0 / TAU, t0 * 3.0)], [p1, n1, Vector2(a1 / TAU, t0 * 3.0)],
+					[p2, n1, Vector2(a1 / TAU, t1 * 3.0)], [p0, n0, Vector2(a0 / TAU, t0 * 3.0)],
+					[p2, n1, Vector2(a1 / TAU, t1 * 3.0)], [p3, n0, Vector2(a0 / TAU, t1 * 3.0)]]:
+				st.set_normal(v[1])
+				st.set_uv(v[2])
+				st.add_vertex(v[0])
+
+
+func _build_conifer(variant: int, height: float) -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var trunk := SurfaceTool.new()
+	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_trunk(trunk, height * 0.72, 0.30 + variant * 0.03, 0.05,
+		Vector2(sin(float(variant) * 2.1), cos(float(variant) * 1.7)), 7, 6)
+	_add_surface(am, trunk, _bark_mat)
+
+	var fol := SurfaceTool.new()
+	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 7717 + variant * 131
+	var levels := 8
+	for level in levels:
+		var t := 0.20 + 0.80 * (float(level) / float(levels - 1))
+		var y := t * height
+		# Fir silhouette: wide low skirt tapering to a spire.
+		var radius := pow(1.0 - t, 1.15) * height * 0.26 + 0.45
+		var cards := 8 - level / 3
+		for c in cards:
+			var ang := TAU * float(c) / float(cards) + _rng.randf_range(-0.3, 0.3)
+			var dir := Vector3(cos(ang), 0.0, sin(ang))
+			var outward := radius * _rng.randf_range(0.55, 0.95)
+			var down := -0.55 - _rng.randf_range(0.0, 0.35)
+			var center := dir * outward + Vector3(0, y + _rng.randf_range(-0.3, 0.3), 0)
+			var basis := _card_basis(dir, down)
+			var shade := lerpf(0.52, 1.0, t * 0.8 + _rng.randf_range(-0.1, 0.1))
+			var size := Vector2(radius * _rng.randf_range(1.5, 2.2),
+				radius * _rng.randf_range(1.0, 1.6))
+			_card(fol, center, size, basis, Color(shade * 0.86, shade, shade * 0.82))
+	# Crown spire.
+	for c in 4:
+		var ang2 := TAU * float(c) / 4.0
+		var dir2 := Vector3(cos(ang2), 0, sin(ang2))
+		_card(fol, Vector3(0, height * 0.97, 0), Vector2(height * 0.16, height * 0.2),
+			_card_basis(dir2, -1.2), Color(0.9, 1.0, 0.88))
+	_add_surface(am, fol, _conifer_mat)
+	return am
+
+
+func _build_broadleaf(variant: int) -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var h := 7.5 + variant * 2.4
+	var trunk := SurfaceTool.new()
+	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_trunk(trunk, h * 0.6, 0.38, 0.12, Vector2(0.4, -0.3), 8, 5)
+	_add_surface(am, trunk, _bark_mat)
+
+	# Two angled boughs.
+	var bough := SurfaceTool.new()
+	bough.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for b in 3:
+		var ang := TAU * float(b) / 3.0 + 0.7
+		var dir := Vector3(cos(ang), 0, sin(ang))
+		var base := dir * 0.15 + Vector3(0, h * 0.42, 0)
+		var tip := dir * h * 0.20 + Vector3(0, h * 0.66, 0)
+		_branch(bough, base, tip, 0.14)
+	_add_surface(am, bough, _bark_mat)
+
+	var fol := SurfaceTool.new()
+	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 3391 + variant * 77
+	var crown_y := h * 0.74
+	var radius := h * 0.34
+	for i in 16:
+		var ang := _rng.randf_range(0, TAU)
+		var elev := _rng.randf_range(-0.5, 1.0)
+		var pos := Vector3(cos(ang) * radius * _rng.randf_range(0.15, 0.95),
+			crown_y + elev * radius * 0.55,
+			sin(ang) * radius * _rng.randf_range(0.15, 0.95))
+		var dir := Vector3(cos(ang), _rng.randf_range(-0.2, 0.35), sin(ang))
+		var basis := _card_basis(dir, _rng.randf_range(-0.7, 0.2))
+		var shade := _rng.randf_range(0.62, 1.0)
+		var size := Vector2(radius * _rng.randf_range(1.1, 1.8), radius * _rng.randf_range(0.9, 1.4))
+		_card(fol, pos, size, basis, Color(shade * 0.9, shade, shade * 0.72))
+	_add_surface(am, fol, _leaf_mat)
+	return am
+
+
+func _branch(st: SurfaceTool, a: Vector3, b: Vector3, r: float) -> void:
+	var dir := (b - a).normalized()
+	var up := Vector3.UP if absf(dir.y) < 0.9 else Vector3.RIGHT
+	var side := dir.cross(up).normalized()
+	var other := dir.cross(side).normalized()
+	var seg := 5
+	for i in seg:
+		var a0 := TAU * float(i) / float(seg)
+		var a1 := TAU * float(i + 1) / float(seg)
+		var d0 := side * cos(a0) + other * sin(a0)
+		var d1 := side * cos(a1) + other * sin(a1)
+		var p0 := a + d0 * r
+		var p1 := a + d1 * r
+		var p2 := b + d1 * r * 0.35
+		var p3 := b + d0 * r * 0.35
+		for v in [[p0, d0], [p1, d1], [p2, d1], [p0, d0], [p2, d1], [p3, d0]]:
+			st.set_normal(v[1])
+			st.set_uv(Vector2(0, 0))
+			st.add_vertex(v[0])
+
+
+func _build_snag() -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_trunk(st, 9.0, 0.42, 0.06, Vector2(1.2, 0.4), 7, 5)
+	for i in 4:
+		var ang := TAU * float(i) / 4.0 + 0.4
+		var base := Vector3(0, 3.6 + i * 1.1, 0)
+		var tip := base + Vector3(cos(ang), 0.8, sin(ang)) * 2.4
+		_branch(st, base, tip, 0.13)
+	_add_surface(am, st, _bark_mat)
+	return am
+
+
+func _build_bush() -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 5150
+	for i in 9:
+		var ang := _rng.randf_range(0, TAU)
+		var dir := Vector3(cos(ang), 0, sin(ang))
+		var pos := dir * _rng.randf_range(0.1, 0.65) + Vector3(0, _rng.randf_range(0.35, 1.0), 0)
+		var basis := _card_basis(dir, _rng.randf_range(-0.8, 0.3))
+		var shade := _rng.randf_range(0.55, 0.95)
+		_card(st, pos, Vector2(_rng.randf_range(0.9, 1.6), _rng.randf_range(0.7, 1.1)),
+			basis, Color(shade * 0.86, shade, shade * 0.7))
+	_add_surface(am, st, _leaf_mat)
+	return am
+
+
+func _build_grass_card() -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 9091
+	for i in 3:
+		var ang := PI * float(i) / 3.0
+		var basis := Basis(Vector3.UP, ang) * Basis(Vector3.RIGHT, -PI * 0.5)
+		_card(st, Vector3(0, 0.34, 0), Vector2(0.95, 0.68), basis, Color(1, 1, 1))
+	_add_surface(am, st, _grass_mat)
+	return am
+
+
+func _build_fern_card() -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 4242
+	for i in 4:
+		var ang := TAU * float(i) / 4.0
+		var basis := Basis(Vector3.UP, ang) * Basis(Vector3.RIGHT, -PI * 0.5)
+		_card(st, Vector3(0, 0.42, 0), Vector2(1.25, 0.85), basis,
+			Color(0.75, 0.95, 0.7))
+	_add_surface(am, st, _leaf_mat)
+	return am
+
+
+func _build_rock(scale: float, seed_base: int) -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = seed_base * 977
+	var segs := 12
+	var rings := 8
+	var radius := scale
+	var verts := []
+	for r in rings + 1:
+		var v := float(r) / float(rings)
+		var phi := v * PI
+		var row := []
+		for s in segs:
+			var theta := TAU * float(s) / float(segs)
+			var n := Vector3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
+			var lump := 1.0 + sin(n.x * 4.1 + 1.2) * 0.16 + sin(n.y * 6.3 + 0.4) * 0.12 \
+				+ sin(n.z * 5.2 + 2.1) * 0.14 + _rng.randf_range(-0.06, 0.06)
+			var p := n * radius * lump
+			p.y *= 0.72
+			p.x *= 1.0 + (0.25 if seed_base % 2 == 0 else 0.0)
+			row.append(p)
+		verts.append(row)
+	for r in rings:
+		for s in segs:
+			var s2 := (s + 1) % segs
+			var a: Vector3 = verts[r][s]
+			var b: Vector3 = verts[r][s2]
+			var c: Vector3 = verts[r + 1][s2]
+			var d: Vector3 = verts[r + 1][s]
+			for tri in [[a, b, c], [a, c, d]]:
+				var n: Vector3 = ((tri[1] - tri[0]).cross(tri[2] - tri[0])).normalized()
+				if n.y < 0:
+					n = -n
+				for p: Vector3 in tri:
+					st.set_normal(n)
+					st.set_uv(Vector2(p.x, p.z) * 0.5)
+					st.add_vertex(p)
+	_add_surface(am, st, _rock_mat)
+	return am
+
+
+# ---------------------------------------------------------------------------
+# Scatter
+# ---------------------------------------------------------------------------
+func scatter_chunk(chunk: Node3D, coord: Vector2i) -> void:
+	_rng.seed = int(hash(Vector2i(coord.x, coord.y))) ^ Config.SEED
+	var ox := float(coord.x) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	var oz := float(coord.y) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	var trees := {"conifer_a": [], "conifer_b": [], "conifer_c": [], "broadleaf": [],
+		"broadleaf_b": [], "snag": []}
+	var bushes: Array[Transform3D] = []
+	var grass: Array[Transform3D] = []
+	var ferns: Array[Transform3D] = []
+	var rocks: Array[Transform3D] = []
+	var pebbles: Array[Transform3D] = []
+	var asset_fern: Array[Transform3D] = []
+	var asset_weed: Array[Transform3D] = []
+	var asset_nettle: Array[Transform3D] = []
+	var asset_rooibos: Array[Transform3D] = []
+	var asset_trunk: Array[Transform3D] = []
+	var asset_stones: Array[Transform3D] = []
+
+	var candidates := 260
+	for i in candidates:
+		var lx := _rng.randf() * Config.CHUNK_SIZE
+		var lz := _rng.randf() * Config.CHUNK_SIZE
+		var wx := ox + lx
+		var wz := oz + lz
+		var h: float = chunk.sample_height(wx, wz)
+		var slope: float = field.slope_at(wx, wz)
+		var water: float = field.distance_to_water(wx, wz)
+		var river_w: float = field.river_info(wx, wz).z
+		var road: float = field.distance_to_road(wx, wz)
+
+		var water_clear: float = river_w * 0.5 + 5.0
+		if water < water_clear or road < 4.5 or slope > 0.62:
+			# Still allow shoreline rocks and pebbles in the wet band.
+			if water < water_clear and water > river_w * 0.5 - 1.0 and slope < 0.5:
+				if _rng.randf() < 0.35:
+					rocks.append(_xform(Vector3(wx, h, wz), _rng.randf_range(0.5, 1.4), _rng.randf() * TAU))
+			continue
+
+		var forest := _forest_density(wx, wz)
+		var meadow := _meadow_density(wx, wz)
+		var in_pad := _near_pad(wx, wz)
+
+		if not in_pad and _rng.randf() < forest:
+			var conifer_bias := _conifer_bias(wx, wz, h)
+			var roll := _rng.randf()
+			var species := "conifer_a"
+			if roll > conifer_bias:
+				species = "broadleaf" if _rng.randf() < 0.6 else "broadleaf_b"
+			elif roll < 0.16:
+				species = "conifer_b"
+			elif roll < 0.34:
+				species = "conifer_c"
+			var scale := _rng.randf_range(0.72, 1.35)
+			if species == "snag":
+				scale = _rng.randf_range(0.8, 1.2)
+			var xf := _xform(Vector3(wx, h - 0.12, wz), scale, _rng.randf() * TAU)
+			(trees[species] as Array).append(xf)
+			# A second tree just behind the first thickens the canopy.
+			if _rng.randf() < 0.55:
+				var wx2 := wx + _rng.randf_range(-3.5, 3.5)
+				var wz2 := wz + _rng.randf_range(-3.5, 3.5)
+				var h2: float = chunk.sample_height(wx2, wz2)
+				(trees[species] as Array).append(
+					_xform(Vector3(wx2, h2 - 0.12, wz2), _rng.randf_range(0.65, 1.1), _rng.randf() * TAU))
+			if slope > 0.45 and _rng.randf() < 0.10:
+				(trees["snag"] as Array).append(_xform(Vector3(wx, h, wz), 1.0, _rng.randf() * TAU))
+
+		if _rng.randf() < meadow * 0.85:
+			if _rng.randf() < 0.82:
+				grass.append(_xform(Vector3(wx, h - 0.05, wz), _rng.randf_range(0.7, 1.5),
+					_rng.randf() * TAU))
+			else:
+				ferns.append(_xform(Vector3(wx, h - 0.1, wz), _rng.randf_range(0.6, 1.3),
+					_rng.randf() * TAU))
+		if _rng.randf() < forest * 0.4:
+			bushes.append(_xform(Vector3(wx, h - 0.15, wz), _rng.randf_range(0.7, 1.6),
+				_rng.randf() * TAU))
+		if _rng.randf() < 0.08 and slope < 0.55:
+			rocks.append(_xform(Vector3(wx, h - 0.25, wz), _rng.randf_range(0.7, 2.2),
+				_rng.randf() * TAU))
+		if _rng.randf() < 0.14:
+			pebbles.append(_xform(Vector3(wx, h - 0.08, wz), _rng.randf_range(0.6, 1.6),
+				_rng.randf() * TAU))
+
+		# Poly Haven undergrowth, only where it fits the biome.
+		if forest > 0.35 and _rng.randf() < 0.16:
+			asset_fern.append(_xform(Vector3(wx, h - 0.02, wz), _rng.randf_range(0.8, 1.4),
+				_rng.randf() * TAU))
+		if meadow > 0.45 and _rng.randf() < 0.12:
+			asset_weed.append(_xform(Vector3(wx, h - 0.02, wz), _rng.randf_range(0.8, 1.5),
+				_rng.randf() * TAU))
+		if water < river_w * 0.5 + 14.0 and _rng.randf() < 0.30:
+			asset_nettle.append(_xform(Vector3(wx, h - 0.02, wz), _rng.randf_range(0.7, 1.3),
+				_rng.randf() * TAU))
+		if h > 90.0 and slope < 0.45 and _rng.randf() < 0.10:
+			asset_rooibos.append(_xform(Vector3(wx, h - 0.02, wz), _rng.randf_range(0.8, 1.5),
+				_rng.randf() * TAU))
+		if forest > 0.2 and forest < 0.55 and _rng.randf() < 0.04:
+			asset_trunk.append(_xform(Vector3(wx, h - 0.15, wz), _rng.randf_range(0.7, 1.2),
+				_rng.randf() * TAU))
+		if slope > 0.25 and _rng.randf() < 0.05:
+			asset_stones.append(_xform(Vector3(wx, h - 0.1, wz), _rng.randf_range(0.6, 1.4),
+				_rng.randf() * TAU))
+
+	_add_multimesh(chunk, "TreesA", meshes["conifer_a"], trees["conifer_a"], 900.0, true)
+	_add_multimesh(chunk, "TreesB", meshes["conifer_b"], trees["conifer_b"], 900.0, true)
+	_add_multimesh(chunk, "TreesC", meshes["conifer_c"], trees["conifer_c"], 900.0, true)
+	_add_multimesh(chunk, "Broadleaf", meshes["broadleaf"], trees["broadleaf"], 900.0, true)
+	_add_multimesh(chunk, "BroadleafB", meshes["broadleaf_b"], trees["broadleaf_b"], 900.0, true)
+	_add_multimesh(chunk, "Snags", meshes["snag"], trees["snag"], 500.0, true)
+	_add_multimesh(chunk, "Bushes", meshes["bush"], bushes, 260.0, true)
+	_add_multimesh(chunk, "Grass", meshes["grass"], grass, 120.0, false)
+	_add_multimesh(chunk, "Ferns", meshes["fern"], ferns, 150.0, false)
+	_add_multimesh(chunk, "Rocks", meshes["rock_a"], rocks, 520.0, true)
+	_add_multimesh(chunk, "Pebbles", meshes["pebble"], pebbles, 200.0, false)
+	_add_multimesh(chunk, "PHAFern", _asset_meshes.get("fern"), asset_fern, 120.0, false)
+	_add_multimesh(chunk, "PHWeed", _asset_meshes.get("weed"), asset_weed, 100.0, false)
+	_add_multimesh(chunk, "PHNettle", _asset_meshes.get("nettle"), asset_nettle, 90.0, false)
+	_add_multimesh(chunk, "PHRooibos", _asset_meshes.get("rooibos"), asset_rooibos, 180.0, true)
+	_add_multimesh(chunk, "PHTrunk", _asset_meshes.get("trunk"), asset_trunk, 240.0, true)
+	_add_multimesh(chunk, "PHStones", _asset_meshes.get("stones"), asset_stones, 200.0, true)
+
+	stats["trees"] += _count(trees)
+	stats["grass"] += grass.size() + ferns.size()
+	stats["rocks"] += rocks.size() + pebbles.size()
+	stats["chunks"] += 1
+
+
+func _count(dict: Dictionary) -> int:
+	var n := 0
+	for k in dict.keys():
+		n += (dict[k] as Array).size()
+	return n
+
+
+func _xform(pos: Vector3, scale: float, yaw: float) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(scale, scale, scale)), pos)
+
+
+func _add_multimesh(parent: Node3D, node_name: String, mesh: Variant,
+		transforms: Array, vis_end: float, shadows: bool) -> void:
+	if mesh == null or not (mesh is ArrayMesh) or transforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh as ArrayMesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = node_name
+	mmi.multimesh = mm
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows \
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.visibility_range_end = vis_end
+	mmi.visibility_range_end_margin = vis_end * 0.12
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	parent.add_child(mmi)
+
+
+func _forest_density(wx: float, wz: float) -> float:
+	var west := Terrain.smooth01(-120.0, -520.0, wx)
+	var north := Terrain.smooth01(-280.0, -720.0, wz)
+	var east := Terrain.smooth01(520.0, 860.0, wx) * 0.55
+	var valley_copse := Terrain.smooth01(0.18, 0.55, _patch_noise(wx, wz))
+	var south := Terrain.smooth01(520.0, 900.0, wz) * 0.25
+	var density := maxf(maxf(west, north), maxf(east, valley_copse * 0.7))
+	density = maxf(density, south)
+	# Clearings and fields break the forest up.
+	density *= 1.0 - Terrain.smooth01(0.48, 0.78, _patch_noise(wx + 311.0, wz - 97.0)) * 0.8
+	var near_water: float = field.distance_to_water(wx, wz)
+	var river_w: float = field.river_info(wx, wz).z
+	if near_water < river_w * 0.5 + 8.0:
+		density *= 0.25
+	return clampf(density, 0.0, 1.0) * 0.85
+
+
+func _meadow_density(wx: float, wz: float) -> float:
+	var forest := _forest_density(wx, wz)
+	var open := 1.0 - forest * 0.75
+	var south := Terrain.smooth01(300.0, 820.0, wz)
+	return clampf(open + south * 0.3, 0.0, 1.0)
+
+
+func _conifer_bias(wx: float, wz: float, h: float) -> float:
+	var north := Terrain.smooth01(-100.0, -650.0, wz)
+	var west := Terrain.smooth01(-100.0, -450.0, wx) * 0.7
+	var height_bias := Terrain.smooth01(25.0, 110.0, h)
+	var south := Terrain.smooth01(300.0, 800.0, wz)
+	return clampf(0.35 + north * 0.55 + west * 0.3 + height_bias * 0.4 - south * 0.5, 0.05, 0.98)
+
+
+func _patch_noise(x: float, z: float) -> float:
+	return (sin(x * 0.0113) * cos(z * 0.0137) + sin(x * 0.0041 + 1.7) * cos(z * 0.0053 - 0.6)) * 0.25 + 0.5
+
+
+func _near_pad(wx: float, wz: float) -> bool:
+	var p := Vector2(wx, wz)
+	var pads := [
+		[Config.VILLAGE_CENTER, 150.0],
+		[Config.CASTLE_CENTER, 105.0],
+		[Config.HAMLET_CENTER, 80.0],
+		[Config.RUINS_SITE, 70.0],
+	]
+	for pad in pads:
+		if p.distance_to(pad[0] as Vector2) < float(pad[1]):
+			return true
+	# Keep the farmland south of the village clear.
+	if p.distance_to(Config.VILLAGE_CENTER + Vector2(24, 190)) < 110.0:
+		return true
+	return false
