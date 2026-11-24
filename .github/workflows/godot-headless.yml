@@ -39,3 +39,11 @@ jobs:
 
       - name: Run performance benchmark
         run: '"$GODOT_BIN" --headless --path . res://tests/perf_bench.tscn -- --label=ci'
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bth-perf-ci-report
+          path: docs/perf_ci.json
+          if-no-files-found: error
+          retention-days: 14
