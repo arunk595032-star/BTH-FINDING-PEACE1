@@ -290,8 +290,8 @@ func _setup_environment() -> void:
 
 	env.adjustment_enabled = true
 	env.adjustment_brightness = 1.0
-	env.adjustment_contrast = 1.03
-	env.adjustment_saturation = 1.04
+	env.adjustment_contrast = 1.04 if _is_mobile_platform() else 1.09
+	env.adjustment_saturation = 1.06 if _is_mobile_platform() else 1.12
 
 	environment.environment = env
 	add_child(environment)
@@ -300,7 +300,7 @@ func _setup_environment() -> void:
 func _setup_sun() -> void:
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_color = Color(1.0, 0.93, 0.82) if _is_mobile_platform() else Color(1.0, 0.86, 0.69)
+	sun.light_color = Color(1.0, 0.93, 0.82) if _is_mobile_platform() else Color(1.0, 0.94, 0.86)
 	sun.light_energy = 1.05 if _is_mobile_platform() else 1.28
 	sun.light_angular_distance = 0.45
 	sun.shadow_enabled = true
