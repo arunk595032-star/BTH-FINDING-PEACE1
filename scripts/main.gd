@@ -95,7 +95,7 @@ func apply_quality(name: String, announce := true) -> void:
 		env.ssao_enabled = bool(quality["ssao"])
 		env.ssil_enabled = bool(quality["ssil"])
 		env.volumetric_fog_enabled = bool(quality["volumetric_fog"])
-		env.glow_enabled = bool(quality["glow"])
+		env.glow_enabled = bool(quality["glow"]) and not _is_mobile_platform()
 
 	Engine.max_fps = mini(int(quality["max_fps"]), 45) if OS.has_feature("android") else int(quality["max_fps"])
 
@@ -155,7 +155,7 @@ func _apply_quality_values() -> void:
 		env.ssao_enabled = bool(quality.get("ssao", false))
 		env.ssil_enabled = bool(quality.get("ssil", false))
 		env.volumetric_fog_enabled = bool(quality.get("volumetric_fog", false))
-		env.glow_enabled = bool(quality.get("glow", true))
+		env.glow_enabled = bool(quality.get("glow", true)) and not _is_mobile_platform()
 	Engine.max_fps = mini(int(quality.get("max_fps", 45)), 45) if OS.has_feature("android") else int(quality.get("max_fps", 0))
 	if world != null:
 		world.apply_quality(quality)
@@ -179,6 +179,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		apply_quality(Quality.next(quality_name))
 
 
+func _is_mobile_platform() -> bool:
+	return OS.has_feature("android") or OS.has_feature("ios")
+
+
 func _setup_environment() -> void:
 	environment = WorldEnvironment.new()
 	environment.name = "Atmosphere"
@@ -189,16 +193,16 @@ func _setup_environment() -> void:
 	sky.process_mode = Sky.PROCESS_MODE_REALTIME
 	var panorama := PanoramaSkyMaterial.new()
 	panorama.panorama = load("res://assets/hdri/belfast_sunset_puresky_2k.hdr")
-	panorama.energy_multiplier = 0.95
+	panorama.energy_multiplier = 0.72 if _is_mobile_platform() else 0.95
 	sky.sky_material = panorama
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
-	env.ambient_light_energy = 0.85
+	env.ambient_light_energy = 0.68 if _is_mobile_platform() else 0.85
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.05
+	env.tonemap_exposure = 0.88 if _is_mobile_platform() else 1.05
 	env.tonemap_white = 6.0
 
 	env.ssao_enabled = true
@@ -220,11 +224,11 @@ func _setup_environment() -> void:
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_light_color = Color(0.78, 0.72, 0.60)
-	env.fog_light_energy = 0.55
-	env.fog_sun_scatter = 0.32
-	env.fog_density = 0.0026
+	env.fog_light_energy = 0.38 if _is_mobile_platform() else 0.55
+	env.fog_sun_scatter = 0.12 if _is_mobile_platform() else 0.32
+	env.fog_density = 0.0018 if _is_mobile_platform() else 0.0026
 	env.fog_aerial_perspective = 0.55
-	env.fog_sky_affect = 0.25
+	env.fog_sky_affect = 0.12 if _is_mobile_platform() else 0.25
 
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.0075
@@ -247,17 +251,17 @@ func _setup_environment() -> void:
 func _setup_sun() -> void:
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_color = Color(1.0, 0.86, 0.69)
-	sun.light_energy = 1.75
+	sun.light_color = Color(1.0, 0.93, 0.82) if _is_mobile_platform() else Color(1.0, 0.86, 0.69)
+	sun.light_energy = 1.05 if _is_mobile_platform() else 1.75
 	sun.light_angular_distance = 0.7
 	sun.shadow_enabled = true
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 420.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if _is_mobile_platform() else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 180.0 if _is_mobile_platform() else 420.0
 	sun.directional_shadow_split_1 = 0.12
 	sun.directional_shadow_split_2 = 0.28
 	sun.directional_shadow_split_3 = 0.62
 	sun.shadow_bias = 0.035
 	sun.shadow_normal_bias = 1.4
-	sun.shadow_blur = 1.2
+	sun.shadow_blur = 0.8 if _is_mobile_platform() else 1.2
 	sun.rotation_degrees = Vector3(-31.0, -116.0, 0.0)
 	add_child(sun)
