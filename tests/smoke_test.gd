@@ -75,6 +75,9 @@ func run_tests() -> void:
 	for i in 60:
 		world._pump_queue(3)
 		await get_tree().physics_frame
+	# Lattice generation runs on worker threads at runtime; the test completes
+	# the queue synchronously so streaming assertions are deterministic.
+	world.force_stream_complete()
 	var chunk_count: int = world.loaded_chunk_count()
 	print("      streamed chunks: %d" % chunk_count)
 	check(chunk_count >= 20, "terrain chunks streamed around the player")
@@ -133,10 +136,57 @@ func run_tests() -> void:
 	player.global_position = Vector3(Config.VILLAGE_CENTER.x - 7.5,
 		world.field.height(Config.VILLAGE_CENTER.x - 7.5, Config.VILLAGE_CENTER.y + 6.0) + 1.5,
 		Config.VILLAGE_CENTER.y + 6.0)
-	for i in 4:
+	# Focus probing runs at 10 Hz, so allow a tenth of a second of physics.
+	for i in 12:
 		await get_tree().physics_frame
 	print("      focus near well: '%s'" % player.current_focus)
 	check(player.current_focus != "", "interaction probe finds nearby landmark")
+
+	# --- performance regressions ------------------------------------------
+	world.force_detail_update()
+	var perf_stats: Dictionary = world.perf
+	check(int(perf_stats["chunk_loads"]) > 0, "chunk loads tracked")
+	var coord: Vector2i = world.chunk_coord(player.global_position)
+	var hits_before := int(world.perf["lattice_cache_hits"])
+	var lat_a: Dictionary = world._get_lattice(coord)
+	var lat_b: Dictionary = world._get_lattice(coord)
+	check(lat_a == lat_b, "chunk lattice cache returns identical data")
+	check(int(world.perf["lattice_cache_hits"]) > hits_before, "lattice cache hits counted")
+
+	var lod_ok := true
+	var lods := {}
+	var collision_chunks := 0
+	var collision_far := 0
+	for c in world.chunks.values():
+		lods[c.lod] = true
+		var d := Vector2(c.world_center().x - player.global_position.x,
+			c.world_center().z - player.global_position.z).length()
+		if d <= float(world._lod_near) and c.lod != 0:
+			lod_ok = false
+		if c.collision_enabled:
+			collision_chunks += 1
+			# Hysteresis keeps collision a little beyond the radius on purpose.
+			if d > float(world._collision_radius) + 49.0:
+				collision_far += 1
+	check(lod_ok, "terrain LOD agrees with chunk distance")
+	check(lods.has(0) and (lods.has(1) or lods.has(2)), "multiple terrain LODs active")
+	check(collision_chunks > 0, "terrain collision attached near the player")
+	check(collision_far == 0, "no terrain collision beyond the activation radius")
+	check(int(perf_stats["shape_built"]) > 0, "collision shapes are built lazily")
+	check(world.vegetation.meshes.get("conifer_a_far") != null, "far tree LOD meshes built")
+	check(int(perf_stats["pump_spikes_16ms"]) == 0, "no streaming frame exceeded 16 ms")
+
+	main.apply_quality("medium", false)
+	check(is_equal_approx(float(world._stream_radius), 320.0)
+		and is_equal_approx(float(world._collision_radius), 176.0),
+		"medium quality profile applied to the live world")
+	main.apply_quality("ultra", false)
+	check(is_equal_approx(float(world._stream_radius), 448.0),
+		"ultra quality profile restored")
+	world.force_stream_complete()
+	print("      loaded after force: %d chunks, perf %s" % [
+		world.loaded_chunk_count(), JSON.stringify(world.perf)])
+	check(world.loaded_chunk_count() >= 30, "streaming radius fills to 30+ chunks")
 
 	# --- assets ------------------------------------------------------------
 	var gltfs := [

@@ -18,6 +18,8 @@ var waterfall_material: ShaderMaterial
 var waterfalls: Array = []
 var _river_index := 0
 var _waterfall_index := 0
+var _mists: Array = []
+var _detail_distance := 110.0
 var stats := {"river_km": 0.0, "waterfalls": 0, "lake": false}
 
 
@@ -34,6 +36,21 @@ func setup(p_field: RefCounted) -> void:
 	waterfall_material.shader = load(WATERFALL_SHADER)
 	if ResourceLoader.exists(STREAK_TEX):
 		waterfall_material.set_shader_parameter("streak_tex", load(STREAK_TEX))
+
+
+## Adjusts water shading cost and mist particle load for a quality profile.
+## The reflective look is preserved: only the screen-refraction sample and the
+## second ripple layer fade out on distant water.
+func set_quality(profile: Dictionary) -> void:
+	_detail_distance = float(profile.get("water_detail_distance", 110.0))
+	if material != null:
+		material.set_shader_parameter("detail_distance", _detail_distance)
+	var amount := int(profile.get("mist_amount", 90))
+	for mist in _mists:
+		if is_instance_valid(mist):
+			mist.amount = amount
+			mist.visibility_range_end = 120.0 * (_detail_distance / 110.0) + 80.0
+			mist.visibility_range_end_margin = 40.0
 
 
 func build(parent: Node3D) -> void:
@@ -300,4 +317,5 @@ func _build_waterfall(root: Node3D, wf: Dictionary) -> void:
 	quad.material = mmat
 	mist.mesh = quad
 	root.add_child(mist)
+	_mists.append(mist)
 	stats["waterfalls"] += 1

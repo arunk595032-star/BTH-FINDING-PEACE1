@@ -2,6 +2,7 @@ extends Node3D
 ## Entry point: lighting/atmosphere, world generation, player and HUD.
 
 const Config = preload("res://scripts/core/world_config.gd")
+const Quality = preload("res://scripts/core/quality.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Player = preload("res://player/player.gd")
 const HUD = preload("res://ui/hud.gd")
@@ -11,6 +12,8 @@ var player
 var hud: CanvasLayer
 var environment: WorldEnvironment
 var sun: DirectionalLight3D
+var quality_name := "ultra"
+var quality: Dictionary = Quality.PROFILES["ultra"]
 
 
 func _ready() -> void:
@@ -30,11 +33,66 @@ func _ready() -> void:
 	hud = HUD.new()
 	hud.name = "HUD"
 	add_child(hud)
-	hud.bind(world, player)
+	hud.bind(world, player, self)
+
+	apply_quality(Quality.resolve(), false)
 
 	print("[BTH] %s" % JSON.stringify(world.report()))
 	print("[BTH] spawn at %s  region %s" % [
 		player.global_position, world.field.region_at(player.global_position)])
+
+
+# ---------------------------------------------------------------------------
+# Quality profiles
+# ---------------------------------------------------------------------------
+func apply_quality(name: String, announce := true) -> void:
+	if not Quality.has_profile(name):
+		name = "ultra"
+	quality_name = name
+	quality = Quality.profile(name)
+
+	var vp := get_viewport()
+	if vp != null:
+		vp.scaling_3d_scale = float(quality["render_scale"])
+		vp.msaa_3d = int(quality["msaa"])
+
+	if sun != null:
+		sun.directional_shadow_max_distance = float(quality["shadow_distance"])
+		sun.shadow_blur = float(quality["shadow_blur"])
+
+	if environment != null and environment.environment != null:
+		var env := environment.environment
+		env.ssao_enabled = bool(quality["ssao"])
+		env.ssil_enabled = bool(quality["ssil"])
+		env.volumetric_fog_enabled = bool(quality["volumetric_fog"])
+		env.glow_enabled = bool(quality["glow"])
+
+	Engine.max_fps = int(quality["max_fps"])
+
+	if world != null:
+		world.apply_quality(quality)
+		if world.water != null:
+			world.water.set_quality(quality)
+		# Re-apply vegetation distances to already loaded chunks.
+		if world.vegetation != null and world.player != null:
+			for chunk in world.chunks.values():
+				var c: Vector3 = chunk.world_center()
+				var d := Vector2(c.x - world.player.global_position.x,
+					c.z - world.player.global_position.z).length()
+				world.vegetation.apply_lod(chunk, d)
+
+	if hud != null:
+		hud.set_quality(name, str(quality["label"]))
+	if announce:
+		print("[BTH] quality -> %s (%s)" % [name, quality["label"]])
+		Quality.save(name)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and (event as InputEventKey).pressed \
+			and not (event as InputEventKey).echo \
+			and (event as InputEventKey).keycode == KEY_F1:
+		apply_quality(Quality.next(quality_name))
 
 
 func _setup_environment() -> void:

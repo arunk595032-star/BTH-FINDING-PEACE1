@@ -18,7 +18,7 @@ godot --headless --path . --import
     -> 252-step asset import completed, 13 Poly Haven glTF scenes imported.
 
 godot --headless --path . res://tests/smoke_test.tscn
-    -> === 27 checks, 0 failed ===   (exit code 0)
+    -> === 40 checks, 0 failed ===   (exit code 0)
     -> [BTH] World built in 3972 ms
        {"mask_ms":922,"far_terrain_ms":954,"vegetation_prep_ms":521,
         "water_ms":8,"structures_ms":1273,"total_ms":3972}
@@ -99,3 +99,30 @@ godot --headless --path . res://tests/smoke_test.tscn
 Then check, in order: village spawn and street, river water at the bridge, castle gate
 traversal, waterfall at (352, -372), forest tree density and wind, night-time is out of
 scope (no day/night cycle yet).
+
+
+## Performance optimization pass (BTH V1.1)
+
+Baseline: `7e7a62db9d6a8483d4ad42e205e5ecc0f33c2059` (branch `perf-baseline`,
+tag `bth-v1-baseline`). Full before/after evidence and limitations:
+`docs/PERFORMANCE.md`; raw JSON: `docs/perf_baseline.json`, `docs/perf_after.json`.
+
+```
+godot --headless --path . res://tests/perf_bench.tscn -- --label=after
+    -> === BTH performance benchmark ===
+    -> chunks after 90 frames / forced: 31 / 40
+    -> terrain mesh avg 2.72 ms  vegetation avg 3.30 ms
+    -> revisit of an unloaded chunk 0.77 ms
+    -> streaming frame max 11.84 ms, p95 7.28 ms, 0 frames over 16 ms
+    -> terrain triangles 74 624 (was 184 320), shadow-casting nodes 200 (was 366)
+    -> static memory 355.5 MB (was 414.7 MB)
+
+godot --headless --path . --quit-after 300
+    -> exit 0, no script/shader/error lines
+```
+
+Status of this pass: **runtime-tested headless (CPU-side)**, **implemented but
+not hardware-verified** for all GPU effects (terrain LOD appearance, far-tree
+impostors, water/terrain distance detail, shadow workload, quality profiles).
+No FPS, GPU frame time, VRAM or real draw calls were measured: this host has no
+GPU or display, and the headless dummy renderer reports zero for those monitors.

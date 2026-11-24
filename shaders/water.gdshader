@@ -19,6 +19,10 @@ uniform float foam_amount = 0.75;
 uniform float clarity = 0.9;
 uniform float reflection_strength = 0.85;
 uniform float alpha_min = 0.72;
+// Distant water keeps the depth colour, sky reflection and fresnel, but skips
+// the screen-space refraction sample, the second ripple layer and the foam
+// noise sample.  Near water is unchanged.
+uniform float detail_distance = 110.0;
 
 varying vec3 v_wpos;
 varying vec2 v_flow;
@@ -45,19 +49,26 @@ void fragment() {
 	float water_depth = -VERTEX.z;
 	float depth = clamp(scene_depth - water_depth, 0.0, 40.0);
 
+	float cam_dist = length(v_wpos - INV_VIEW_MATRIX[3].xyz);
 	vec2 flow = normalize(v_flow + vec2(0.0001));
 	vec2 uv1 = v_wpos.xz * 0.055 + flow * TIME * flow_speed * 0.12;
 	vec2 uv2 = v_wpos.xz * 0.16 - flow * TIME * flow_speed * 0.2;
 	vec3 n1 = texture(ripple_tex, uv1).rgb * 2.0 - 1.0;
-	vec3 n2 = texture(ripple_tex, uv2).rgb * 2.0 - 1.0;
+	vec3 n2 = n1;
+	if (cam_dist < detail_distance) {
+		n2 = texture(ripple_tex, uv2).rgb * 2.0 - 1.0;
+	}
 	vec3 rn = normalize(vec3((n1.x + n2.x * 0.6) * 0.55, 1.0, (n1.y + n2.y * 0.6) * 0.55));
 	NORMAL = normalize((VIEW_MATRIX * vec4(rn, 0.0)).xyz);
 
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 5.0);
 	fres = mix(0.02, 1.0, fres);
 
-	vec2 refr_uv = SCREEN_UV + rn.xz * 0.035 * clamp(depth * 0.5, 0.0, 1.0);
-	vec3 refracted = textureLod(screen_tex, refr_uv, 0.0).rgb;
+	vec3 refracted = vec3(0.0);
+	if (cam_dist < detail_distance) {
+		vec2 refr_uv = SCREEN_UV + rn.xz * 0.035 * clamp(depth * 0.5, 0.0, 1.0);
+		refracted = textureLod(screen_tex, refr_uv, 0.0).rgb;
+	}
 	// Sky reflection sampled from the same HDRI the world uses (equirectangular).
 	vec3 refl_dir = reflect(-VIEW, NORMAL);
 	vec2 sky_uv = vec2(atan(refl_dir.z, refl_dir.x) / 6.2831853 + 0.5,
@@ -68,11 +79,17 @@ void fragment() {
 	body = mix(body, deep_color, smoothstep(1.5, 5.0, depth));
 	body *= 0.9 + n1.x * 0.15;
 
+	if (cam_dist >= detail_distance) {
+		refracted = body;
+	}
 	vec3 water_col = mix(refracted * 0.55 + body, reflected, fres * reflection_strength);
 	water_col = mix(water_col, reflected, fres * 0.35);
 
 	// Foam: shoreline band plus streak noise on faster water.
-	float foam_noise = texture(ripple_tex, v_wpos.xz * 0.22 + flow * TIME * 0.15).b;
+	float foam_noise = 0.55;
+	if (cam_dist < detail_distance) {
+		foam_noise = texture(ripple_tex, v_wpos.xz * 0.22 + flow * TIME * 0.15).b;
+	}
 	float shore = 1.0 - smoothstep(0.0, 0.55, depth);
 	float foam = shore * (0.55 + 0.45 * foam_noise) * foam_amount;
 	foam += smoothstep(0.72, 0.95, foam_noise) * 0.25 * foam_amount * (1.0 - smoothstep(0.4, 3.0, depth));

@@ -33,6 +33,7 @@ var _arm_r: MeshInstance3D
 var _stride := 0.0
 var _last_pos := Vector3.ZERO
 var _mouse_captured := true
+var _focus_accum := 0.0
 
 var _landmarks := [
 	{"name": "Thornbury well", "pos": Config.VILLAGE_CENTER + Vector2(-7.5, 6.0), "radius": 5.0},
@@ -152,17 +153,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	var input_vec := Vector2.ZERO
-	if Input.is_action_pressed("move_forward"):
-		input_vec.y -= 1.0
-	if Input.is_action_pressed("move_back"):
-		input_vec.y += 1.0
-	if Input.is_action_pressed("move_left"):
-		input_vec.x -= 1.0
-	if Input.is_action_pressed("move_right"):
-		input_vec.x += 1.0
-	if input_vec.length() > 1.0:
-		input_vec = input_vec.normalized()
+	# One engine call instead of four action queries per physics tick.
+	var input_vec := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 
 	is_sprinting = Input.is_action_pressed("sprint") and input_vec.length() > 0.1
 	var target_speed := run_speed if is_sprinting else walk_speed
@@ -200,7 +192,12 @@ func _physics_process(delta: float) -> void:
 
 	_update_model(delta, horizontal.length())
 	_update_camera(delta)
-	_update_focus()
+	# Landmark probing is event-like: 10 Hz is imperceptible and keeps the
+	# physics tick free of nine distance tests every frame.
+	_focus_accum += delta
+	if _focus_accum >= 0.1:
+		_focus_accum = 0.0
+		_update_focus()
 
 	var moved := global_position.distance_to(_last_pos)
 	if moved < 3.0:

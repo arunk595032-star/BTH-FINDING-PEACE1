@@ -11,10 +11,14 @@ var _compass_label: Label
 var _focus_label: Label
 var _discover_label: Label
 var _fps_label: Label
+var _quality_label: Label
 var _panel: PanelContainer
 var _title: Label
 var _toast: Label
 var _toast_time := 0.0
+var _refresh := 0.0
+var _main
+var _quality_text := "Ultra (PC)"
 
 
 func _ready() -> void:
@@ -56,6 +60,11 @@ func _ready() -> void:
 	_fps_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_fps_label.position = Vector2(-280, -32)
+	_quality_label = _make_label(root, 12, Color(0.8, 0.8, 0.76, 0.45))
+	_quality_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_quality_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_quality_label.position = Vector2(-280, -50)
+	_quality_label.text = "quality Ultra (PC)  ·  F1 to cycle"
 
 	_build_controls_panel(root)
 	_build_title(root)
@@ -122,10 +131,17 @@ func _build_title(root: Control) -> void:
 	tween.parallel().tween_property(sub, "modulate:a", 0.0, 2.2)
 
 
-func bind(world_node, player_node) -> void:
+func bind(world_node, player_node, main_node = null) -> void:
 	world = world_node
 	player = player_node
+	_main = main_node
 	_update_labels()
+
+
+func set_quality(name: String, label: String) -> void:
+	_quality_text = "%s (%s)" % [label, name]
+	if _quality_label != null:
+		_quality_label.text = "quality %s  ·  F1 to cycle" % _quality_text
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -134,7 +150,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	_update_labels()
+	# Text is rebuilt at 10 Hz instead of every frame: the labels do not change
+	# faster than that, and each rebuild allocates several strings.
+	_refresh += delta
+	if _refresh >= 0.1:
+		_refresh = 0.0
+		_update_labels()
 	if _toast_time > 0.0:
 		_toast_time -= delta
 		_toast.modulate.a = clampf(_toast_time, 0.0, 1.0)
@@ -152,8 +173,10 @@ func _update_labels() -> void:
 	var bearing: float = player.camera_bearing()
 	_compass_label.text = "%s   %d°" % [_cardinal(bearing), int(bearing)]
 	_discover_label.text = "sites inspected %d / %d" % [player.discovered.size(), 9]
-	_fps_label.text = "BTH valley benchmark  ·  %d fps  ·  %d chunks" % [
-		Engine.get_frames_per_second(), world.loaded_chunk_count()]
+	_fps_label.text = "BTH valley benchmark  ·  %d fps  ·  %.1f ms  ·  %d chunks" % [
+		Engine.get_frames_per_second(),
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		world.loaded_chunk_count()]
 	if player.current_focus != "":
 		_focus_label.text = "E   inspect  %s" % String(player.current_focus)
 	else:

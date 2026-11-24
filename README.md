@@ -26,18 +26,20 @@ screenshot - see the verification notes below.*
 | Third-person explorer | Walk/run/jump, camera-relative movement, slope limit, boundary clamp, interaction probe |
 | Forests and ground cover | 5 500+ trees in ~40 loaded chunks, grass/fern cards, Poly Haven undergrowth, rocks |
 | Lighting/atmosphere | HDRI sunset sky, warm directional sun, SSAO/SSIL, volumetric + distance fog, ACES |
-| Testing | Headless smoke test - 27/27 checks pass (see `docs/VERIFICATION.md`) |
+| Testing | Headless smoke test - 40/40 checks pass (see `docs/VERIFICATION.md`) |
+| Performance | Chunk streaming budgeted, worker-thread terrain sampling, 3 distance LODs, quality profiles - see `docs/PERFORMANCE.md` |
 
 ## Run it
 
 1. Install **Godot 4.7** (standard build, Forward+ renderer).
 2. Open this folder as a project (`project.godot`) and press **F5**, or run
    `godot --path .`.
-3. First launch generates the world in ~4 s on the build machine (Ryzen-class 2 vCPU container);
-   terrain chunks then stream in around the player.
+3. First launch generates the world in ~4 s on the build machine (cloud VM, no GPU);
+   terrain chunks then stream in around the player. Press **F1** to cycle
+   Ultra / High / Medium / Low quality (saved to `user://bth_settings.cfg`).
 
 **Controls:** WASD walk, Shift run, Space jump, mouse look, E inspect, H toggle help panel,
-Esc release the cursor (click to recapture).
+F1 cycle quality profile, Esc release the cursor (click to recapture).
 
 The player spawns on the village street in Thornbury, facing the village square. The
 castle road leads east to Tarnwatch Keep; the south road follows the river to the lake and

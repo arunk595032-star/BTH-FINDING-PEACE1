@@ -544,18 +544,18 @@ func write_world_mask() -> Image:
 			var road := 0.0
 			var trail := 0.0
 			var wet := 0.0
+			# The mask is baked at exactly GRID_RES, so the rasterised grid cell
+			# is the correct sample: no bilinear lookups are needed per pixel.
 			if _road_dist[gi] < 60.0:
-				var rd := _bilinear(_road_dist, wx, wz)
-				var rw := _bilinear(_road_width, wx, wz)
-				var surf := _bilinear(_road_surface, wx, wz)
-				var edge := smooth01(rw * 0.5 + 3.2, rw * 0.5 - 0.5, rd)
-				if surf > 0.5:
+				var rw := _road_width[gi]
+				var edge := smooth01(rw * 0.5 + 3.2, rw * 0.5 - 0.5, _road_dist[gi])
+				if _road_surface[gi] > 0.5:
 					trail = edge
 				else:
 					road = edge
 			if _river_dist[gi] < 70.0:
-				var ri := river_info(wx, wz)
-				wet = smooth01(ri.z * 0.5 + 13.0, ri.z * 0.5 - 0.8, ri.x)
+				var rw2 := _river_width[gi]
+				wet = smooth01(rw2 * 0.5 + 13.0, rw2 * 0.5 - 0.8, _river_dist[gi])
 			var west := smooth01(-80.0, -430.0, wx)
 			var forest := maxf(west, north * 0.85)
 			forest *= 0.45 + 0.55 * (sin(wx * 0.0113) * cos(wz * 0.0137) * 0.5 + 0.5)

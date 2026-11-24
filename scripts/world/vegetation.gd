@@ -47,6 +47,12 @@ func setup(p_field: RefCounted) -> void:
 	meshes["pebble"] = _build_rock(0.32, 21)
 	meshes["grass"] = _build_grass_card()
 	meshes["fern"] = _build_fern_card()
+	# Far LODs: same silhouette from a fraction of the cards, no shadow cast.
+	meshes["conifer_a_far"] = _build_conifer_far(13.0)
+	meshes["conifer_b_far"] = _build_conifer_far(17.5)
+	meshes["conifer_c_far"] = _build_conifer_far(9.5)
+	meshes["broadleaf_far"] = _build_broadleaf_far(0)
+	meshes["broadleaf_b_far"] = _build_broadleaf_far(1)
 
 	# Poly Haven CC0 undergrowth (real scans, used at low density near the
 	# player where their polygon budget is affordable).
@@ -372,26 +378,206 @@ func _build_rock(scale: float, seed_base: int) -> ArrayMesh:
 	return am
 
 
+func _build_conifer_far(height: float) -> ArrayMesh:
+	# Distant conifer: sparse 5-sided trunk and 9 cards instead of ~64.
+	var am := ArrayMesh.new()
+	var trunk := SurfaceTool.new()
+	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_trunk(trunk, height * 0.72, 0.34, 0.07, Vector2.ZERO, 5, 3)
+	_add_surface(am, trunk, _bark_mat)
+	var fol := SurfaceTool.new()
+	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 8801
+	for level in 3:
+		var t := 0.30 + 0.62 * (float(level) / 2.0)
+		var y := t * height
+		var radius := pow(1.0 - t, 1.15) * height * 0.26 + 0.5
+		for c in 3:
+			var ang := TAU * float(c) / 3.0 + float(level) * 0.7
+			var dir := Vector3(cos(ang), 0.0, sin(ang))
+			var center := dir * radius * 0.55 + Vector3(0, y, 0)
+			var basis := _card_basis(dir, -0.5)
+			var shade := lerpf(0.55, 0.95, t)
+			_card(fol, center, Vector2(radius * 2.0, radius * 1.25), basis,
+				Color(shade * 0.86, shade, shade * 0.82))
+	_add_surface(am, fol, _conifer_mat)
+	return am
+
+
+func _build_broadleaf_far(variant: int) -> ArrayMesh:
+	var am := ArrayMesh.new()
+	var h := 7.5 + variant * 2.4
+	var trunk := SurfaceTool.new()
+	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_trunk(trunk, h * 0.6, 0.38, 0.13, Vector2(0.4, -0.3), 5, 3)
+	_add_surface(am, trunk, _bark_mat)
+	var fol := SurfaceTool.new()
+	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_rng.seed = 6607 + variant * 53
+	var crown_y := h * 0.74
+	var radius := h * 0.34
+	for i in 7:
+		var ang := _rng.randf_range(0, TAU)
+		var elev := _rng.randf_range(-0.4, 1.0)
+		var pos := Vector3(cos(ang) * radius * _rng.randf_range(0.2, 0.9),
+			crown_y + elev * radius * 0.5,
+			sin(ang) * radius * _rng.randf_range(0.2, 0.9))
+		var dir := Vector3(cos(ang), _rng.randf_range(-0.2, 0.35), sin(ang))
+		var basis := _card_basis(dir, _rng.randf_range(-0.7, 0.2))
+		var shade := _rng.randf_range(0.62, 1.0)
+		_card(fol, pos, Vector2(radius * _rng.randf_range(1.4, 2.0),
+			radius * _rng.randf_range(1.1, 1.6)), basis,
+			Color(shade * 0.9, shade, shade * 0.72))
+	_add_surface(am, fol, _leaf_mat)
+	return am
+
+
 # ---------------------------------------------------------------------------
-# Scatter
+# Quality / LOD settings
+# ---------------------------------------------------------------------------
+const TREE_LAYERS := ["TreesA", "TreesB", "TreesC", "Broadleaf", "BroadleafB", "Snags"]
+const CACHE_LIMIT := 140
+## Mim radius per layer at the reference (Ultra) profile.
+const LAYER_END := {
+	"TreesA": 900.0, "TreesB": 900.0, "TreesC": 900.0, "Broadleaf": 900.0,
+	"BroadleafB": 900.0, "Snags": 500.0, "Bushes": 260.0, "Grass": 120.0,
+	"Ferns": 150.0, "Rocks": 520.0, "Pebbles": 200.0, "PHAFern": 120.0,
+	"PHWeed": 100.0, "PHNettle": 90.0, "PHRooibos": 180.0, "PHTrunk": 240.0,
+	"PHStones": 200.0,
+}
+
+var _cache: Dictionary = {}
+var _cache_order: Array[Vector2i] = []
+var _veg_scale := 1.0
+var _tree_end := 900.0
+var _tree_lod := 260.0
+var _pads: Array = []
+
+
+func set_quality(profile: Dictionary) -> void:
+	_veg_scale = float(profile.get("vegetation_scale", 1.0))
+	_tree_end = float(profile.get("tree_end", 900.0))
+	_tree_lod = float(profile.get("tree_lod", 260.0))
+
+
+func _end_for(layer: String) -> float:
+	var base: float = LAYER_END.get(layer, 150.0)
+	if TREE_LAYERS.has(layer):
+		return base * (_tree_end / 900.0)
+	return base * _veg_scale
+
+
+func _casts_shadows(layer: String) -> bool:
+	if TREE_LAYERS.has(layer):
+		return true
+	return layer == "Rocks" or layer == "PHRooibos" or layer == "PHTrunk" or layer == "PHStones"
+
+
+# ---------------------------------------------------------------------------
+# Scatter (cached per chunk)
 # ---------------------------------------------------------------------------
 func scatter_chunk(chunk: Node3D, coord: Vector2i) -> void:
+	var entry = _cache.get(coord)
+	if entry == null:
+		entry = _generate_chunk(chunk, coord)
+		_cache[coord] = entry
+		_cache_order.append(coord)
+		while _cache_order.size() > CACHE_LIMIT:
+			var old: Vector2i = _cache_order.pop_front()
+			_cache.erase(old)
+	_instantiate(chunk, entry)
+
+
+## Applies the tree LOD and refreshed visibility ranges to a chunk.
+func apply_lod(chunk: Node3D, distance: float) -> void:
+	var nodes = chunk.get_meta("veg_nodes", null)
+	if nodes == null:
+		return
+	var entry = chunk.get_meta("veg_entry", null)
+	var far: bool = distance > _tree_lod
+	for layer in nodes.keys():
+		var mmi: MultiMeshInstance3D = nodes[layer]
+		var end := _end_for(layer)
+		mmi.visibility_range_end = end
+		mmi.visibility_range_end_margin = end * 0.12
+		if not TREE_LAYERS.has(layer) or entry == null:
+			continue
+		if far:
+			var far_mm = entry["mm_far"].get(layer)
+			if far_mm == null:
+				far_mm = _multimesh(entry["far_meshes"][layer], entry["layers"][layer])
+				entry["mm_far"][layer] = far_mm
+			mmi.multimesh = far_mm
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		else:
+			var near_mm = entry["mm_near"].get(layer)
+			if near_mm != null:
+				mmi.multimesh = near_mm
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
+func _multimesh(mesh: ArrayMesh, transforms: Array) -> MultiMesh:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	return mm
+
+
+func _instantiate(chunk: Node3D, entry: Dictionary) -> void:
+	var nodes := {}
+	var near_mm := {}
+	for layer in entry["layers"].keys():
+		var xf: Array = entry["layers"][layer]
+		if xf.is_empty():
+			continue
+		var mm := _multimesh(entry["meshes"][layer], xf)
+		near_mm[layer] = mm
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = layer
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+			if _casts_shadows(layer) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var end := _end_for(layer)
+		mmi.visibility_range_end = end
+		mmi.visibility_range_end_margin = end * 0.12
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		chunk.add_child(mmi)
+		nodes[layer] = mmi
+	entry["mm_near"] = near_mm
+	chunk.set_meta("veg_nodes", nodes)
+	chunk.set_meta("veg_entry", entry)
+
+
+func _generate_chunk(chunk: Node3D, coord: Vector2i) -> Dictionary:
 	_rng.seed = int(hash(Vector2i(coord.x, coord.y))) ^ Config.SEED
 	var ox := float(coord.x) * Config.CHUNK_SIZE - Config.WORLD_HALF
 	var oz := float(coord.y) * Config.CHUNK_SIZE - Config.WORLD_HALF
-	var trees := {"conifer_a": [], "conifer_b": [], "conifer_c": [], "broadleaf": [],
-		"broadleaf_b": [], "snag": []}
-	var bushes: Array[Transform3D] = []
-	var grass: Array[Transform3D] = []
-	var ferns: Array[Transform3D] = []
-	var rocks: Array[Transform3D] = []
-	var pebbles: Array[Transform3D] = []
-	var asset_fern: Array[Transform3D] = []
-	var asset_weed: Array[Transform3D] = []
-	var asset_nettle: Array[Transform3D] = []
-	var asset_rooibos: Array[Transform3D] = []
-	var asset_trunk: Array[Transform3D] = []
-	var asset_stones: Array[Transform3D] = []
+	var layers := {}
+	for layer in LAYER_END.keys():
+		layers[layer] = []
+	var bushes: Array = layers["Bushes"]
+	var grass: Array = layers["Grass"]
+	var ferns: Array = layers["Ferns"]
+	var rocks: Array = layers["Rocks"]
+	var pebbles: Array = layers["Pebbles"]
+	var asset_fern: Array = layers["PHAFern"]
+	var asset_weed: Array = layers["PHWeed"]
+	var asset_nettle: Array = layers["PHNettle"]
+	var asset_rooibos: Array = layers["PHRooibos"]
+	var asset_trunk: Array = layers["PHTrunk"]
+	var asset_stones: Array = layers["PHStones"]
+
+	if _pads.is_empty():
+		_pads = [
+			[Config.VILLAGE_CENTER, 150.0],
+			[Config.CASTLE_CENTER, 105.0],
+			[Config.HAMLET_CENTER, 80.0],
+			[Config.RUINS_SITE, 70.0],
+			[Config.VILLAGE_CENTER + Vector2(24, 190), 110.0],
+		]
 
 	var candidates := 260
 	for i in candidates:
@@ -400,47 +586,49 @@ func scatter_chunk(chunk: Node3D, coord: Vector2i) -> void:
 		var wx := ox + lx
 		var wz := oz + lz
 		var h: float = chunk.sample_height(wx, wz)
-		var slope: float = field.slope_at(wx, wz)
-		var water: float = field.distance_to_water(wx, wz)
-		var river_w: float = field.river_info(wx, wz).z
+		var water_info: Vector3 = field.river_info(wx, wz)
+		var water := water_info.x
+		var river_w := water_info.z
 		var road: float = field.distance_to_road(wx, wz)
 
 		var water_clear: float = river_w * 0.5 + 5.0
-		if water < water_clear or road < 4.5 or slope > 0.62:
+		if water < water_clear or road < 4.5:
 			# Still allow shoreline rocks and pebbles in the wet band.
-			if water < water_clear and water > river_w * 0.5 - 1.0 and slope < 0.5:
+			if water < water_clear and water > river_w * 0.5 - 1.0 \
+					and chunk.slope_at(wx, wz) < 0.5:
 				if _rng.randf() < 0.35:
 					rocks.append(_xform(Vector3(wx, h, wz), _rng.randf_range(0.5, 1.4), _rng.randf() * TAU))
 			continue
+		var slope: float = chunk.slope_at(wx, wz)
+		if slope > 0.62:
+			continue
 
-		var forest := _forest_density(wx, wz)
-		var meadow := _meadow_density(wx, wz)
+		var forest := _forest_density(wx, wz, water, river_w)
+		var meadow := _meadow_density(forest)
 		var in_pad := _near_pad(wx, wz)
 
 		if not in_pad and _rng.randf() < forest:
 			var conifer_bias := _conifer_bias(wx, wz, h)
 			var roll := _rng.randf()
-			var species := "conifer_a"
+			var species := "TreesA"
 			if roll > conifer_bias:
-				species = "broadleaf" if _rng.randf() < 0.6 else "broadleaf_b"
+				species = "Broadleaf" if _rng.randf() < 0.6 else "BroadleafB"
 			elif roll < 0.16:
-				species = "conifer_b"
+				species = "TreesB"
 			elif roll < 0.34:
-				species = "conifer_c"
+				species = "TreesC"
 			var scale := _rng.randf_range(0.72, 1.35)
-			if species == "snag":
-				scale = _rng.randf_range(0.8, 1.2)
 			var xf := _xform(Vector3(wx, h - 0.12, wz), scale, _rng.randf() * TAU)
-			(trees[species] as Array).append(xf)
+			(layers[species] as Array).append(xf)
 			# A second tree just behind the first thickens the canopy.
 			if _rng.randf() < 0.55:
 				var wx2 := wx + _rng.randf_range(-3.5, 3.5)
 				var wz2 := wz + _rng.randf_range(-3.5, 3.5)
 				var h2: float = chunk.sample_height(wx2, wz2)
-				(trees[species] as Array).append(
+				(layers[species] as Array).append(
 					_xform(Vector3(wx2, h2 - 0.12, wz2), _rng.randf_range(0.65, 1.1), _rng.randf() * TAU))
 			if slope > 0.45 and _rng.randf() < 0.10:
-				(trees["snag"] as Array).append(_xform(Vector3(wx, h, wz), 1.0, _rng.randf() * TAU))
+				(layers["Snags"] as Array).append(_xform(Vector3(wx, h, wz), 1.0, _rng.randf() * TAU))
 
 		if _rng.randf() < meadow * 0.85:
 			if _rng.randf() < 0.82:
@@ -479,28 +667,44 @@ func scatter_chunk(chunk: Node3D, coord: Vector2i) -> void:
 			asset_stones.append(_xform(Vector3(wx, h - 0.1, wz), _rng.randf_range(0.6, 1.4),
 				_rng.randf() * TAU))
 
-	_add_multimesh(chunk, "TreesA", meshes["conifer_a"], trees["conifer_a"], 900.0, true)
-	_add_multimesh(chunk, "TreesB", meshes["conifer_b"], trees["conifer_b"], 900.0, true)
-	_add_multimesh(chunk, "TreesC", meshes["conifer_c"], trees["conifer_c"], 900.0, true)
-	_add_multimesh(chunk, "Broadleaf", meshes["broadleaf"], trees["broadleaf"], 900.0, true)
-	_add_multimesh(chunk, "BroadleafB", meshes["broadleaf_b"], trees["broadleaf_b"], 900.0, true)
-	_add_multimesh(chunk, "Snags", meshes["snag"], trees["snag"], 500.0, true)
-	_add_multimesh(chunk, "Bushes", meshes["bush"], bushes, 260.0, true)
-	_add_multimesh(chunk, "Grass", meshes["grass"], grass, 120.0, false)
-	_add_multimesh(chunk, "Ferns", meshes["fern"], ferns, 150.0, false)
-	_add_multimesh(chunk, "Rocks", meshes["rock_a"], rocks, 520.0, true)
-	_add_multimesh(chunk, "Pebbles", meshes["pebble"], pebbles, 200.0, false)
-	_add_multimesh(chunk, "PHAFern", _asset_meshes.get("fern"), asset_fern, 120.0, false)
-	_add_multimesh(chunk, "PHWeed", _asset_meshes.get("weed"), asset_weed, 100.0, false)
-	_add_multimesh(chunk, "PHNettle", _asset_meshes.get("nettle"), asset_nettle, 90.0, false)
-	_add_multimesh(chunk, "PHRooibos", _asset_meshes.get("rooibos"), asset_rooibos, 180.0, true)
-	_add_multimesh(chunk, "PHTrunk", _asset_meshes.get("trunk"), asset_trunk, 240.0, true)
-	_add_multimesh(chunk, "PHStones", _asset_meshes.get("stones"), asset_stones, 200.0, true)
-
-	stats["trees"] += _count(trees)
-	stats["grass"] += grass.size() + ferns.size()
-	stats["rocks"] += rocks.size() + pebbles.size()
+	stats["trees"] += _count_layers(layers, TREE_LAYERS)
+	stats["grass"] += layers["Grass"].size() + layers["Ferns"].size()
+	stats["rocks"] += layers["Rocks"].size() + layers["Pebbles"].size()
 	stats["chunks"] += 1
+
+	var meshes_for := {
+		"TreesA": meshes["conifer_a"], "TreesB": meshes["conifer_b"],
+		"TreesC": meshes["conifer_c"], "Broadleaf": meshes["broadleaf"],
+		"BroadleafB": meshes["broadleaf_b"], "Snags": meshes["snag"],
+		"Bushes": meshes["bush"], "Grass": meshes["grass"], "Ferns": meshes["fern"],
+		"Rocks": meshes["rock_a"], "Pebbles": meshes["pebble"],
+		"PHAFern": _asset_meshes.get("fern"), "PHWeed": _asset_meshes.get("weed"),
+		"PHNettle": _asset_meshes.get("nettle"), "PHRooibos": _asset_meshes.get("rooibos"),
+		"PHTrunk": _asset_meshes.get("trunk"), "PHStones": _asset_meshes.get("stones"),
+	}
+	var far_meshes := {
+		"TreesA": meshes["conifer_a_far"], "TreesB": meshes["conifer_b_far"],
+		"TreesC": meshes["conifer_c_far"], "Broadleaf": meshes["broadleaf_far"],
+		"BroadleafB": meshes["broadleaf_b_far"], "Snags": meshes["snag"],
+	}
+	# Drop layers whose mesh failed to load so instantiation stays simple.
+	for layer in layers.keys():
+		if meshes_for.get(layer) == null or (layers[layer] as Array).is_empty():
+			layers.erase(layer)
+	return {
+		"layers": layers,
+		"meshes": meshes_for,
+		"far_meshes": far_meshes,
+		"mm_near": {},
+		"mm_far": {},
+	}
+
+
+func _count_layers(layers: Dictionary, names: Array) -> int:
+	var n := 0
+	for layer in names:
+		n += (layers[layer] as Array).size()
+	return n
 
 
 func _count(dict: Dictionary) -> int:
@@ -514,28 +718,7 @@ func _xform(pos: Vector3, scale: float, yaw: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(scale, scale, scale)), pos)
 
 
-func _add_multimesh(parent: Node3D, node_name: String, mesh: Variant,
-		transforms: Array, vis_end: float, shadows: bool) -> void:
-	if mesh == null or not (mesh is ArrayMesh) or transforms.is_empty():
-		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh as ArrayMesh
-	mm.instance_count = transforms.size()
-	for i in transforms.size():
-		mm.set_instance_transform(i, transforms[i])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = node_name
-	mmi.multimesh = mm
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows \
-		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi.visibility_range_end = vis_end
-	mmi.visibility_range_end_margin = vis_end * 0.12
-	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-	parent.add_child(mmi)
-
-
-func _forest_density(wx: float, wz: float) -> float:
+func _forest_density(wx: float, wz: float, water: float, river_w: float) -> float:
 	var west := Terrain.smooth01(-120.0, -520.0, wx)
 	var north := Terrain.smooth01(-280.0, -720.0, wz)
 	var east := Terrain.smooth01(520.0, 860.0, wx) * 0.55
@@ -545,18 +728,14 @@ func _forest_density(wx: float, wz: float) -> float:
 	density = maxf(density, south)
 	# Clearings and fields break the forest up.
 	density *= 1.0 - Terrain.smooth01(0.48, 0.78, _patch_noise(wx + 311.0, wz - 97.0)) * 0.8
-	var near_water: float = field.distance_to_water(wx, wz)
-	var river_w: float = field.river_info(wx, wz).z
-	if near_water < river_w * 0.5 + 8.0:
+	if water < river_w * 0.5 + 8.0:
 		density *= 0.25
 	return clampf(density, 0.0, 1.0) * 0.85
 
 
-func _meadow_density(wx: float, wz: float) -> float:
-	var forest := _forest_density(wx, wz)
+func _meadow_density(forest: float) -> float:
 	var open := 1.0 - forest * 0.75
-	var south := Terrain.smooth01(300.0, 820.0, wz)
-	return clampf(open + south * 0.3, 0.0, 1.0)
+	return clampf(open, 0.0, 1.0)
 
 
 func _conifer_bias(wx: float, wz: float, h: float) -> float:
@@ -572,17 +751,10 @@ func _patch_noise(x: float, z: float) -> float:
 
 
 func _near_pad(wx: float, wz: float) -> bool:
-	var p := Vector2(wx, wz)
-	var pads := [
-		[Config.VILLAGE_CENTER, 150.0],
-		[Config.CASTLE_CENTER, 105.0],
-		[Config.HAMLET_CENTER, 80.0],
-		[Config.RUINS_SITE, 70.0],
-	]
-	for pad in pads:
-		if p.distance_to(pad[0] as Vector2) < float(pad[1]):
+	for pad in _pads:
+		var c: Vector2 = pad[0]
+		var dx := wx - c.x
+		var dz := wz - c.y
+		if dx * dx + dz * dz < float(pad[1]) * float(pad[1]):
 			return true
-	# Keep the farmland south of the village clear.
-	if p.distance_to(Config.VILLAGE_CENTER + Vector2(24, 190)) < 110.0:
-		return true
 	return false

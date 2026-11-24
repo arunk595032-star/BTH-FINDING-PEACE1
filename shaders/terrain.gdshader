@@ -29,6 +29,9 @@ uniform vec2 mask_origin = vec2(-1024.0, -1024.0);
 uniform float mask_size = 2048.0;
 
 uniform float detail_scale = 0.30;
+// Beyond this distance the normal/roughness detail is skipped: six fewer
+// texture samples per pixel where the detail is sub-pixel anyway.
+uniform float detail_distance = 110.0;
 uniform float macro_amount = 0.22;
 uniform float snow_height = 260.0;
 uniform float wet_darkening = 0.45;
@@ -133,18 +136,25 @@ void fragment() {
 	albedo = mix(albedo, vec3(0.86, 0.89, 0.93), snow * 0.85);
 
 	// --- normal / roughness ------------------------------------------------
-	vec3 ng = texture(nrm_grass, uv / 3.2).rgb * 2.0 - 1.0;
-	vec3 nr = texture(nrm_rock, uv / 6.0).rgb * 2.0 - 1.0;
-	vec3 nv = texture(nrm_gravel, uv / 2.2).rgb * 2.0 - 1.0;
-	vec3 nmix = normalize(mix(mix(ng, nv, clamp(w_road + w_trail, 0.0, 1.0)), nr, w_rock));
+	float cam_dist = length(v_wpos - INV_VIEW_MATRIX[3].xyz);
+	vec3 nmix = vec3(0.0, 0.0, 1.0);
+	float roughness = 0.9 * (w_grass + w_forest_final) + 0.85 * w_rock
+		+ 0.92 * (w_road + w_trail) + 0.55 * w_wet;
+	if (cam_dist < detail_distance) {
+		vec3 ng = texture(nrm_grass, uv / 3.2).rgb * 2.0 - 1.0;
+		vec3 nr = texture(nrm_rock, uv / 6.0).rgb * 2.0 - 1.0;
+		vec3 nv = texture(nrm_gravel, uv / 2.2).rgb * 2.0 - 1.0;
+		nmix = normalize(mix(mix(ng, nv, clamp(w_road + w_trail, 0.0, 1.0)), nr, w_rock));
+		float rough_grass = texture(arm_grass, uv / 3.2).g;
+		float rough_rock = texture(arm_rock, uv / 6.0).g;
+		float rough_gravel = texture(arm_gravel, uv / 2.2).g;
+		roughness = rough_grass * (w_grass + w_forest_final) + rough_rock * w_rock
+			+ rough_gravel * (w_road + w_trail) + 0.55 * w_wet;
+		NORMAL_MAP_DEPTH = 0.85;
+	} else {
+		NORMAL_MAP_DEPTH = 0.0;
+	}
 	NORMAL_MAP = nmix * 0.5 + 0.5;
-	NORMAL_MAP_DEPTH = 0.85;
-
-	float rough_grass = texture(arm_grass, uv / 3.2).g;
-	float rough_rock = texture(arm_rock, uv / 6.0).g;
-	float rough_gravel = texture(arm_gravel, uv / 2.2).g;
-	float roughness = rough_grass * (w_grass + w_forest_final) + rough_rock * w_rock
-		+ rough_gravel * (w_road + w_trail) + 0.55 * w_wet;
 	ROUGHNESS = clamp(mix(roughness, 0.06, w_wet * 0.7), 0.05, 1.0);
 	SPECULAR = mix(0.35, 0.9, w_wet);
 	AO = mix(0.75 + n_small * 0.25, 1.0, 1.0 - slope);
