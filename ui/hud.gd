@@ -19,6 +19,7 @@ var _toast_time := 0.0
 var _refresh := 0.0
 var _main
 var _quality_text := "Ultra (PC)"
+var _settings_button: Button
 
 
 func _ready() -> void:
@@ -68,6 +69,20 @@ func _ready() -> void:
 
 	_build_controls_panel(root)
 	_build_title(root)
+	_build_graphics_button(root)
+
+
+func _build_graphics_button(root: Control) -> void:
+	_settings_button = Button.new()
+	_settings_button.text = "GRAPHICS"
+	_settings_button.custom_minimum_size = Vector2(150, 48)
+	_settings_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_settings_button.position = Vector2(-178, 92)
+	_settings_button.pressed.connect(func():
+		if _main != null:
+			_main.open_graphics_settings()
+	)
+	root.add_child(_settings_button)
 
 
 func _make_label(parent: Control, font_size: int, color: Color) -> Label:
@@ -141,7 +156,7 @@ func bind(world_node, player_node, main_node = null) -> void:
 func set_quality(name: String, label: String) -> void:
 	_quality_text = "%s (%s)" % [label, name]
 	if _quality_label != null:
-		_quality_label.text = "quality %s  ·  F1 to cycle" % _quality_text
+		_quality_label.text = "graphics %s  ·  F1 to cycle" % _quality_text
 
 
 func _unhandled_input(event: InputEvent) -> void:
