@@ -33,6 +33,22 @@ The first Android control layout is intentionally functional and replaceable:
 
 The touch layer is instantiated only on Android/iOS. Desktop keyboard and mouse input remain unchanged. The touch overlay is kept separate from player movement logic so a later visual redesign can replace it without rewriting gameplay controls.
 
+## Current mobile pacing implementation
+
+- Android is capped at 45 native rendered FPS for a consistent initial pacing target on the Vivo T4x test device.
+- A mobile-only adaptive-resolution controller samples frame intervals with an EMA and hysteresis.
+- When sustained frame time exceeds the 45 FPS budget, it reduces only the 3D viewport scale in 0.05 steps, down to 0.62.
+- When frame pacing stays comfortably below budget for several seconds, it recovers resolution slowly in 0.025 steps, up to the selected profile's scale.
+- The 2D HUD remains at the native viewport resolution.
+- Mobile directional shadow atlas is 2048 instead of desktop 4096; mobile shadow filtering and anisotropic filtering are reduced through platform overrides.
+- These are conservative controls. Dynamic resolution helps GPU-bound scenes; it cannot fix CPU-bound streaming or physics stalls.
+
+## Frame generation / "AI frames"
+
+There is no generic, safe AI frame-generation switch for Godot's Mobile renderer on Mali-G615-class Android devices. DLSS is not available on this Android GPU, and a shader-only frame interpolator would lack reliable engine motion/depth integration and could add latency or visual artifacts. No fake/interpolated FPS counter is added.
+
+The current implementation prioritizes stable native frame pacing and adaptive 3D resolution. A real frame-generation integration remains a separate research task and must be evaluated on-device with latency and artifact measurements before shipping.
+
 ## Smoothness strategy
 
 1. Establish a real-device baseline: renderer, GPU/driver, resolution, average FPS, frame-time percentiles, thermal state, memory, draw calls, and streaming spikes.
