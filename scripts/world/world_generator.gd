@@ -92,6 +92,7 @@ var _lod_near := 208.0
 var _lod_mid := 352.0
 var _budget_us := 4000
 var _chunk_budget := 3
+var _record_pump_metrics := true
 
 var _lattice_cache: Dictionary = {}
 var _lattice_order: Array[Vector2i] = []
@@ -407,11 +408,12 @@ func _pump_queue(budget: int = 0) -> void:
 		_load_chunk(coord)
 		loaded += 1
 
-	var spent_ms := float(Time.get_ticks_usec() - t0) / 1000.0
-	perf["pump_count"] += 1
-	perf["pump_max_ms"] = maxf(float(perf["pump_max_ms"]), spent_ms)
-	if spent_ms > 16.0:
-		perf["pump_spikes_16ms"] += 1
+	if _record_pump_metrics:
+		var spent_ms := float(Time.get_ticks_usec() - t0) / 1000.0
+		perf["pump_count"] += 1
+		perf["pump_max_ms"] = maxf(float(perf["pump_max_ms"]), spent_ms)
+		if spent_ms > 16.0:
+			perf["pump_spikes_16ms"] += 1
 
 
 func pending_chunks() -> int:
@@ -504,6 +506,11 @@ func _enqueue_ready(coord: Vector2i) -> void:
 ## Test/benchmark helper: completes all queued lattice work and instantiates
 ## every wanted chunk immediately, bypassing the per-frame slicing.
 func force_stream_complete() -> void:
+	# This test/helper path deliberately bypasses the per-frame chunk budget.
+	# Keep its drain time out of runtime pump telemetry so benchmarks report
+	# actual frame-sliced streaming work rather than an intentional bulk drain.
+	var previous_recording := _record_pump_metrics
+	_record_pump_metrics = false
 	var guard := 0
 	while guard < 40000:
 		guard += 1
@@ -512,6 +519,7 @@ func force_stream_complete() -> void:
 		if _jobs.is_empty() and _tasks.is_empty() and _pending.is_empty():
 			break
 		OS.delay_usec(500)
+	_record_pump_metrics = previous_recording
 
 
 func _lod_index_for(distance: float) -> int:

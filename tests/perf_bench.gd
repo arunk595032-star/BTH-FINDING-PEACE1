@@ -265,8 +265,12 @@ func _chunk_timing() -> Dictionary:
 func _streaming_stress() -> Dictionary:
 	world.set_process(false)
 	player.set_physics_process(false)
+	# Start each route at a settled state. Forced drain work is intentionally
+	# excluded from frame timings; only the bounded per-frame pump is sampled.
 	if _has_force:
 		world.force_stream_complete()
+	var pump_count_before := int(world.perf.get("pump_count", 0))
+	var pump_spikes_before := int(world.perf.get("pump_spikes_16ms", 0))
 	var route := [
 		Vector3(-196, 0, 300), Vector3(-100, 0, 200), Vector3(0, 0, 60),
 		Vector3(200, 0, -80), Vector3(438, 0, -132), Vector3(536, 0, 292),
@@ -297,10 +301,15 @@ func _streaming_stress() -> Dictionary:
 			await get_tree().process_frame
 		chunks_loaded_total += world.loaded_chunk_count()
 	var after: int = world.loaded_chunk_count()
+	var runtime_pump_count := int(world.perf.get("pump_count", 0)) - pump_count_before
+	var runtime_pump_spikes := int(world.perf.get("pump_spikes_16ms", 0)) - pump_spikes_before
 	if _has_force:
 		world.force_stream_complete()
 	return {
 		"route_steps": route.size(),
+		"runtime_pump_count": runtime_pump_count,
+		"runtime_pump_spikes_over_16ms": runtime_pump_spikes,
+		"runtime_pump_max_ms": _max(pump_ms),
 		"frames": pump_ms.size(),
 		"total_ms": _ms(Time.get_ticks_usec() - t_all),
 		"frame_avg_ms": _avg(pump_ms),

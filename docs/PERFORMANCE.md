@@ -10,7 +10,7 @@ same host for both commits (`docs/perf_baseline.json`, `docs/perf_after.json`).
 
 | Item | Value |
 |---|---|
-| CPU | QEMU Virtual CPU version 2.5+ (container VM), 8 vCPU visible |
+| CPU | AMD EPYC 7003 (Milan), 2 vCPU visible in the container |
 | GPU | **none** - `/dev/dri` and Vulkan ICD absent, no display |
 | Engine | Godot 4.7.stable.official.5b4e0cb0f, Forward+ project settings |
 | Renderer used for tests | **headless dummy renderer** (`--headless`) |
@@ -98,9 +98,11 @@ Interpretation:
 * **Separate collision trimesh cache** (LRU, 96 shapes) built from the lattice
   without normals/UVs. Collision is attached only within 232 m and removed beyond
   280 m (hysteresis), one chunk per detail tick so physics never spikes.
-* **Predictive, time-budgeted queue**: chunks within 448 m are queued, sorted by
-  `distance - forward_alignment * 140`, instantiated within a 4 ms per-frame
-  budget (2-3 chunks max), with the lattice already prepared ahead of time.
+* **Predictive, soft time-budgeted queue**: chunks within 448 m are queued,
+  sorted by `distance - forward_alignment * 140`, and instantiated with a
+  4 ms target and a 3-chunk cap. A chunk build is atomic: the first chunk in a
+  pump is allowed to finish even if it exceeds 4 ms, after which the pump stops.
+  The budget is therefore a soft target, not a hard frame-time guarantee.
 * **No duplicate generation**: pending set + cache checks; unload is
   farthest-first.
 
@@ -173,6 +175,32 @@ and shader detail distances are new knobs.
 the Low profile is a scalable desktop setting, not a tested Android/iOS build.
 No mobile export template, renderer switch or touch input was added.
 
+## Latest CI validation snapshot (2026-11-24)
+
+A separate headless run on GitHub Actions using Godot 4.7.2 completed after the
+telemetry-isolation changes. This is a cloud-runner snapshot, **not an apples-to-apples
+comparison** with the earlier baseline host and not a real GPU/FPS result.
+
+| Metric | CI result |
+|---|---:|
+| World build total | 2,427 ms |
+| Terrain mesh build average / max | 1.96 / 1.99 ms |
+| Vegetation scatter average / max | 2.04 / 2.21 ms |
+| Full chunk average | 0.50 ms |
+| Chunk revisit average | 0.54 ms |
+| Route streaming frame max / p95 | 4.55 / 4.37 ms |
+| Route frames over 16 ms | 0 |
+| Idle headless frame average / p95 | 6.90 / 7.06 ms |
+| Static memory after streaming | 355.2 MB |
+| Surface draw proxy / shadow casters | 1,209 / 200 |
+
+The expanded smoke suite passed **41 checks, 0 failed**. Full GitHub Actions run:
+https://github.com/arunk595032-star/BTH-FINDING-PEACE1/actions/runs/45380178660
+
+The workflow now uploads `docs/perf_ci.json` as the `bth-perf-ci-report` artifact
+for 14 days on future successful runs. GPU frame time, FPS, 1% lows, VRAM and visual
+quality remain unmeasured because the runner is headless.
+
 ## Visual changes (must be reviewed on a GPU)
 
 1. Terrain beyond 208 m / 352 m uses 24 / 16 quads per chunk instead of 48.
@@ -205,6 +233,9 @@ shadows, village and castle materials) is unchanged in settings.
   (0.35 s); the 232 m radius makes this invisible in normal play, but a
   teleport into a far chunk has up to 0.35 s without terrain collision (the
   spawn path and `force_detail_update()` are synchronous).
+* **Soft streaming budget**: the queue checks its 4 ms target between chunks.
+  A single atomic chunk instantiation (mesh + vegetation) can exceed that target;
+  the target limits additional work in the same pump but cannot pre-empt a build.
 * **Idle headless CPU 6.9 ms** is dummy-renderer scene sync, not script cost;
   a GPU run is required to know the real frame budget.
 
@@ -223,7 +254,7 @@ shadows, village and castle materials) is unchanged in settings.
 
 ```
 godot --headless --path . res://tests/smoke_test.tscn
-    -> === 40 checks, 0 failed ===   (exit 0)
+    -> === 40 checks, 0 failed ===   (exit 0; previously recorded run)
 
 godot --headless --path . res://tests/perf_bench.tscn -- --label=after
     -> PERF_BENCH_DONE (exit 0)
@@ -232,7 +263,9 @@ godot --headless --path . --quit-after 300
     -> exit 0, no script/shader/error lines
 ```
 
-The smoke test now also asserts: lattice cache identity and hit counting, LOD
-agreement with distance, collision only inside the activation radius, far tree
-LOD meshes exist, quality profiles apply to the live world, no streaming frame
-over 16 ms, and a 30+ chunk streaming radius.
+The previously recorded 40-check run predates the telemetry-isolation regression
+check. The current branch contains 41 assertions; the added check verifies that
+forced bulk drains do not pollute runtime pump telemetry. The updated branch also
+reports normal route-pump counts/spikes separately. GitHub Actions must pass before
+these changes are described as runtime-tested. The 4 ms queue budget is a soft
+target because an individual chunk build is atomic.

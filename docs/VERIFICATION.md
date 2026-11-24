@@ -18,7 +18,7 @@ godot --headless --path . --import
     -> 252-step asset import completed, 13 Poly Haven glTF scenes imported.
 
 godot --headless --path . res://tests/smoke_test.tscn
-    -> === 40 checks, 0 failed ===   (exit code 0)
+    -> === 40 checks, 0 failed ===   (exit code 0; previously recorded run)
     -> [BTH] World built in 3972 ms
        {"mask_ms":922,"far_terrain_ms":954,"vegetation_prep_ms":521,
         "water_ms":8,"structures_ms":1273,"total_ms":3972}
@@ -41,7 +41,7 @@ godot --headless --path . --script res://tools/export_world_map.gd
        grid 768 (2.67 m), 3 water paths, 6 roads, seed 20260419
 ```
 
-### What the 27 checks cover
+### What the original 27 core checks cover
 
 Main scene load; world/player instantiation; terrain field; height range; river channel
 carved at every authored river point; streamed chunk count; far-terrain skyline mesh;
@@ -49,6 +49,21 @@ river ribbons; waterfall; lake; house count; bridge count; landmark count; hero 
 tree/grass scatter; procedural conifer mesh; spawn placement; terrain collision body;
 simulated WASD walking; player staying on the surface; interaction probe; all 13 glTF
 assets importing with surfaces; terrain splat mask generation.
+
+## Latest CI verification (2026-11-24)
+
+GitHub Actions run [45380178660](https://github.com/arunk595032-star/BTH-FINDING-PEACE1/actions/runs/45380178660)
+completed successfully on Godot 4.7.2:
+
+- Project resource import: passed
+- Headless smoke test: **41 checks, 0 failed**
+- Performance benchmark: passed (`PERF_BENCH_DONE`)
+- Route streaming frame max: 4.55 ms; p95: 4.37 ms; 0 frames over 16 ms
+- Static memory after streaming: 355.2 MB
+
+This is a cloud headless result. It does not verify rendered visuals, real GPU timing,
+FPS, 1% lows or VRAM. The workflow now preserves the raw `docs/perf_ci.json` output
+as a downloadable artifact on future successful runs.
 
 ## Feature status matrix
 
