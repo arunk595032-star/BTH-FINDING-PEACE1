@@ -63,6 +63,8 @@ common/physics_ticks_per_second=60
 [rendering]
 
 renderer/rendering_method="forward_plus"
+; Keep desktop on Forward+, but use Godot Mobile renderer on Android/mobile exports.
+renderer/rendering_method.mobile="mobile"
 textures/default_filters/anisotropic_filtering_level=4
 lights_and_shadows/directional_shadow/size=4096
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
