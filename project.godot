@@ -66,8 +66,12 @@ renderer/rendering_method="forward_plus"
 ; Keep desktop on Forward+, but use Godot Mobile renderer on Android/mobile exports.
 renderer/rendering_method.mobile="mobile"
 textures/default_filters/anisotropic_filtering_level=4
+textures/default_filters/anisotropic_filtering_level.mobile=2
 lights_and_shadows/directional_shadow/size=4096
+; Reduce mobile shadow atlas cost without changing desktop shadow quality.
+lights_and_shadows/directional_shadow/size.mobile=2048
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=1
 anti_aliasing/quality/msaa_3d=1
 anti_aliasing/quality/screen_space_aa=1
 environment/defaults/default_clear_color=Color(0.36, 0.46, 0.55, 1)
