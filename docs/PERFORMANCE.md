@@ -157,6 +157,18 @@ of geometry material batches and collision boxes, plus the existing settlement
 counts. These values are diagnostic measurements from the current run; they do
 not imply that any one stage is a bottleneck until measured on the target host.
 
+### Startup asset profiling (Phase 6)
+
+The Phase 5 Godot 4.7.2 CI artifact measured the settlement build at 958 ms;
+the `hero_props_ms` stage accounted for 692.8 ms in that run. This is a
+headless CPU measurement on the CI host, not a target-device or GPU result.
+The likely repeated cost was rebuilding identical convex collision hulls for
+multiple instances of the same prop asset. Phase 6 caches those immutable
+collision-shape resources by asset path, alongside the existing mesh cache,
+and reports mesh-load and collision-shape cache/build timings in
+`asset_profile`. The world report also measures `field_ms` independently
+instead of duplicating the far-terrain timing.
+
 ### Quality profiles (scripts/core/quality.gd)
 
 F1 cycles profiles at runtime; the choice is stored in `user://bth_settings.cfg`
