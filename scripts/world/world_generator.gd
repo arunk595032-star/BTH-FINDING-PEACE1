@@ -4,7 +4,7 @@ extends Node3D
 ## Layered approach:
 ##   * one coarse "far terrain" mesh (8 m lattice) drawn only beyond ~520 m so
 ##     the mountain skyline is always present;
-##   * 128 m detailed chunks with HeightMapShape3D collision, streamed around
+##   * 128 m detailed chunks with distance-based Trimesh collision, streamed around
 ##     the player;
 ##   * vegetation MultiMeshes per chunk with per-layer distance culling;
 ##   * water, settlements and bridges built once.
@@ -19,6 +19,9 @@ const Structures = preload("res://scripts/world/structures.gd")
 const FAR_SEGMENTS := 256
 const FAR_HIDE := 430.0
 const CHUNK_BUDGET_PER_FRAME := 3
+const PREDICT_SECONDS := 1.6
+const PREDICT_MAX_DIST := 200.0
+const HIGH_DETAIL_COLLISION_DIST := 160.0
 
 var field
 var vegetation
@@ -37,6 +40,8 @@ var _stream_accum := 0.0
 var _chunk_root: Node3D
 var _pending: Array = []
 var _pending_set: Dictionary = {}
+var _last_player_pos := Vector3.ZERO
+var _player_velocity := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -88,6 +93,7 @@ func _ready() -> void:
 
 func set_player(node: Node3D) -> void:
 	player = node
+	_last_player_pos = player.global_position
 	var t0 := Time.get_ticks_msec()
 	stream_around(player.global_position, true)
 	_pump_queue(4)
@@ -188,13 +194,17 @@ func _build_far_terrain() -> void:
 func _process(delta: float) -> void:
 	if player == null:
 		return
-	# Fill the queue a few chunks at a time so movement never hitches.
+	var pos := player.global_position
+	if delta > 0.0001:
+		_player_velocity = (pos - _last_player_pos) / delta
+	_last_player_pos = pos
 	_pump_queue(CHUNK_BUDGET_PER_FRAME)
+	_upgrade_near_collisions(pos)
 	_stream_accum += delta
-	if _stream_accum < 0.6:
+	if _stream_accum < 0.4:
 		return
 	_stream_accum = 0.0
-	stream_around(player.global_position)
+	stream_around(pos)
 
 
 func chunk_coord(pos: Vector3) -> Vector2i:
@@ -205,6 +215,10 @@ func chunk_coord(pos: Vector3) -> Vector2i:
 
 func stream_around(pos: Vector3, immediate := false) -> void:
 	var pc := chunk_coord(pos)
+	var predict_pos := pos
+	if _player_velocity.length() > 1.5:
+		var look := minf(_player_velocity.length() * PREDICT_SECONDS, PREDICT_MAX_DIST)
+		predict_pos = pos + _player_velocity.normalized() * look
 	var radius := int(ceil(Config.STREAM_RADIUS / Config.CHUNK_SIZE))
 	var max_chunk := int(Config.WORLD_SIZE / Config.CHUNK_SIZE) - 1
 	var wanted: Array[Vector2i] = []
@@ -216,13 +230,18 @@ func stream_around(pos: Vector3, immediate := false) -> void:
 			var center := Vector3(
 				(float(coord.x) + 0.5) * Config.CHUNK_SIZE - Config.WORLD_HALF, 0.0,
 				(float(coord.y) + 0.5) * Config.CHUNK_SIZE - Config.WORLD_HALF)
-			if center.distance_to(Vector3(pos.x, 0.0, pos.z)) > Config.STREAM_RADIUS:
+			var dist_now := center.distance_to(Vector3(pos.x, 0.0, pos.z))
+			var dist_pred := center.distance_to(Vector3(predict_pos.x, 0.0, predict_pos.z))
+			if dist_now > Config.STREAM_RADIUS and dist_pred > Config.STREAM_RADIUS * 0.9:
 				continue
 			wanted.append(coord)
 			if not chunks.has(coord):
-				var dist := center.distance_to(Vector3(pos.x, 0.0, pos.z))
-				if immediate and dist < 220.0:
-					_load_chunk(coord)
+				var dist := dist_now
+				if _player_velocity.length() > 1.0:
+					var to_c := (center - Vector3(pos.x, 0.0, pos.z)).normalized()
+					dist -= maxf(0.0, to_c.dot(_player_velocity.normalized())) * 60.0
+				if immediate and dist_now < 220.0:
+					_load_chunk(coord, _distance_to_chunk_xz(pos, coord) < HIGH_DETAIL_COLLISION_DIST)
 				elif not _pending_set.has(coord):
 					_pending.append({"coord": coord, "dist": dist})
 					_pending_set[coord] = true
@@ -251,7 +270,10 @@ func _pump_queue(budget: int) -> void:
 				(float(coord.y) + 0.5) * Config.CHUNK_SIZE - Config.WORLD_HALF)
 			if center.distance_to(Vector3(player.global_position.x, 0.0, player.global_position.z)) > Config.UNLOAD_RADIUS:
 				continue
-		_load_chunk(coord)
+		var high_detail := true
+		if player != null:
+			high_detail = _distance_to_chunk_xz(player.global_position, coord) < HIGH_DETAIL_COLLISION_DIST
+		_load_chunk(coord, high_detail)
 		loaded += 1
 
 
@@ -259,13 +281,31 @@ func pending_chunks() -> int:
 	return _pending.size()
 
 
-func _load_chunk(coord: Vector2i) -> void:
+func _load_chunk(coord: Vector2i, high_detail_collision: bool = true) -> void:
 	var chunk := TerrainChunk.new()
 	chunk.setup(field, coord)
 	_chunk_root.add_child(chunk)
-	chunk.build(terrain_material)
+	chunk.build(terrain_material, high_detail_collision)
 	vegetation.scatter_chunk(chunk, coord)
 	chunks[coord] = chunk
+
+
+func _distance_to_chunk_xz(pos: Vector3, coord: Vector2i) -> float:
+	var half := Config.CHUNK_SIZE * 0.5
+	var center_x := (float(coord.x) + 0.5) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	var center_z := (float(coord.y) + 0.5) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	var dx := maxf(absf(pos.x - center_x) - half, 0.0)
+	var dz := maxf(absf(pos.z - center_z) - half, 0.0)
+	return Vector2(dx, dz).length()
+
+
+func _upgrade_near_collisions(pos: Vector3) -> void:
+	for coord in chunks.keys():
+		var chunk = chunks[coord]
+		if chunk == null or chunk.high_detail_collision:
+			continue
+		if _distance_to_chunk_xz(pos, coord) < HIGH_DETAIL_COLLISION_DIST:
+			chunk.upgrade_collision()
 
 
 func _unload_chunk(coord: Vector2i) -> void:
