@@ -78,6 +78,19 @@ func run_tests() -> void:
 	var chunk_count: int = world.loaded_chunk_count()
 	print("      streamed chunks: %d" % chunk_count)
 	check(chunk_count >= 20, "terrain chunks streamed around the player")
+	var low_detail_chunk = null
+	for coord in world.chunks:
+		var candidate = world.chunks[coord]
+		if not candidate.high_detail_collision:
+			low_detail_chunk = candidate
+			break
+	check(low_detail_chunk != null, "distant streamed chunks start with reduced collision")
+	if low_detail_chunk != null:
+		var edge_probe: Vector3 = low_detail_chunk.world_center() + Vector3(70.0, 0.0, 0.0)
+		var edge_distance: float = world._distance_to_chunk_xz(edge_probe, low_detail_chunk.coord)
+		check(absf(edge_distance - 6.0) < 0.01, "collision detail distance uses chunk footprint")
+		world._upgrade_near_collisions(low_detail_chunk.world_center())
+		check(low_detail_chunk.high_detail_collision, "near chunk upgrades to full-detail collision")
 	check(world.far_terrain != null, "far terrain mesh built for the skyline")
 
 	# --- water / structures ------------------------------------------------
