@@ -50,6 +50,21 @@ tree/grass scatter; procedural conifer mesh; spawn placement; terrain collision 
 simulated WASD walking; player staying on the surface; interaction probe; all 13 glTF
 assets importing with surfaces; terrain splat mask generation.
 
+## Latest CI verification (2026-11-24)
+
+GitHub Actions run [45380178660](https://github.com/arunk595032-star/BTH-FINDING-PEACE1/actions/runs/45380178660)
+completed successfully on Godot 4.7.2:
+
+- Project resource import: passed
+- Headless smoke test: **41 checks, 0 failed**
+- Performance benchmark: passed (`PERF_BENCH_DONE`)
+- Route streaming frame max: 4.55 ms; p95: 4.37 ms; 0 frames over 16 ms
+- Static memory after streaming: 355.2 MB
+
+This is a cloud headless result. It does not verify rendered visuals, real GPU timing,
+FPS, 1% lows or VRAM. The workflow now preserves the raw `docs/perf_ci.json` output
+as a downloadable artifact on future successful runs.
+
 ## Feature status matrix
 
 | Requirement | Status | Evidence |
