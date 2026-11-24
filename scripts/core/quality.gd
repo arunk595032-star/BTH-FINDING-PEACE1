@@ -44,6 +44,14 @@ static func resolve() -> String:
 				name = cli
 	return name
 
+static func resolve_saved_name() -> String:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		var stored := str(cfg.get_value(SECTION, "quality", ""))
+		if stored == "custom" or PROFILES.has(stored):
+			return stored
+	return resolve()
+
 static func load_settings() -> Dictionary:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK:
