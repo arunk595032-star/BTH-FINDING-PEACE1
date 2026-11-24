@@ -41,7 +41,7 @@ godot --headless --path . --script res://tools/export_world_map.gd
        grid 768 (2.67 m), 3 water paths, 6 roads, seed 20260419
 ```
 
-### What the 27 checks cover
+### What the original 27 core checks cover
 
 Main scene load; world/player instantiation; terrain field; height range; river channel
 carved at every authored river point; streamed chunk count; far-terrain skyline mesh;
