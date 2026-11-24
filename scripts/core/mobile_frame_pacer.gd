@@ -4,8 +4,6 @@ extends Node
 ## frame-time pressure while leaving the 2D HUD at native viewport resolution.
 
 const MIN_SCALE := 0.62
-const DOWN_THRESHOLD := 0.024
-const UP_THRESHOLD := 0.018
 const DOWN_STEP := 0.05
 const UP_STEP := 0.025
 const SAMPLE_INTERVAL := 1.25
@@ -25,7 +23,7 @@ func configure(viewport: Viewport, profile: Dictionary) -> void:
 	_viewport = viewport
 	_base_scale = clampf(float(profile.get("render_scale", 0.85)), MIN_SCALE, 1.0)
 	_current_scale = _base_scale
-	_target_fps = maxf(float(profile.get("max_fps", 45)), 30.0)
+	_target_fps = minf(maxf(float(profile.get("max_fps", 45)), 30.0), 45.0)
 	_frame_time_ema = 1.0 / _target_fps
 	_apply_scale()
 
@@ -47,13 +45,13 @@ func _process(delta: float) -> void:
 		return
 	_sample_elapsed = 0.0
 
-	if _frame_time_ema > DOWN_THRESHOLD:
+	if _frame_time_ema > (1.0 / _target_fps) * 1.08:
 		_slow_elapsed += SAMPLE_INTERVAL
 		_fast_elapsed = 0.0
 		if _slow_elapsed >= SAMPLE_INTERVAL:
 			_set_scale(maxf(MIN_SCALE, _current_scale - DOWN_STEP))
 			_slow_elapsed = 0.0
-	elif _frame_time_ema < UP_THRESHOLD:
+	elif _frame_time_ema < (1.0 / _target_fps) * 0.84:
 		_fast_elapsed += SAMPLE_INTERVAL
 		_slow_elapsed = 0.0
 		if _fast_elapsed >= RECOVERY_HOLD and _current_scale < _base_scale:
