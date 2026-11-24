@@ -1,7 +1,7 @@
 extends Node3D
-## One streamed 128 m terrain chunk: visual mesh + HeightMapShape3D collision.
-## Chunks exist only while the player is near them, which keeps both draw
-## calls and physics bodies bounded no matter how large the world becomes.
+## One streamed 128 m terrain chunk: full-detail visual mesh + distance-based collision.
+## Far chunks use a reduced collision mesh; collision is upgraded as the player
+## approaches to reduce distant physics cost without reducing visual detail.
 
 const Config = preload("res://scripts/core/world_config.gd")
 
@@ -10,29 +10,34 @@ var coord := Vector2i.ZERO
 var built := false
 var triangles := 0
 
+var high_detail_collision := true
+
 var _mesh_instance: MeshInstance3D
 var _body: StaticBody3D
+var _collision_shape: CollisionShape3D
 var _heights := PackedFloat32Array()
 var _step := 1.0
+var _ox := 0.0
+var _oz := 0.0
 
 
 func setup(p_field: RefCounted, p_coord: Vector2i) -> void:
 	field = p_field
 	coord = p_coord
 	name = "Chunk_%d_%d" % [coord.x, coord.y]
-	var ox := float(coord.x) * Config.CHUNK_SIZE - Config.WORLD_HALF
-	var oz := float(coord.y) * Config.CHUNK_SIZE - Config.WORLD_HALF
-	position = Vector3(ox, 0.0, oz)
+	_ox = float(coord.x) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	_oz = float(coord.y) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	position = Vector3(_ox, 0.0, _oz)
 
 
-func build(material: Material) -> void:
+func build(material: Material, p_high_detail_collision: bool = true) -> void:
 	if built:
 		return
 	built = true
+	high_detail_collision = p_high_detail_collision
 	var segs := Config.CHUNK_SEGMENTS
 	var step := Config.CHUNK_SIZE / float(segs)
-	var ox := float(coord.x) * Config.CHUNK_SIZE - Config.WORLD_HALF
-	var oz := float(coord.y) * Config.CHUNK_SIZE - Config.WORLD_HALF
+	_step = step
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -43,8 +48,8 @@ func build(material: Material) -> void:
 	heights.resize((segs + 1) * (segs + 1))
 	for gz in segs + 1:
 		for gx in segs + 1:
-			var wx := ox + float(gx) * step
-			var wz := oz + float(gz) * step
+			var wx := _ox + float(gx) * step
+			var wz := _oz + float(gz) * step
 			heights[gz * (segs + 1) + gx] = field.height(wx, wz)
 
 	# Normals are derived from the lattice itself (no extra field sampling).
@@ -77,10 +82,10 @@ func build(material: Material) -> void:
 			var n10: Vector3 = normals[i10]
 			var n01: Vector3 = normals[i01]
 			var n11: Vector3 = normals[i11]
-			var uv00 := Vector2((ox + x0) / 12.0, (oz + z0) / 12.0)
-			var uv10 := Vector2((ox + x1) / 12.0, (oz + z0) / 12.0)
-			var uv01 := Vector2((ox + x0) / 12.0, (oz + z1) / 12.0)
-			var uv11 := Vector2((ox + x1) / 12.0, (oz + z1) / 12.0)
+			var uv00 := Vector2((_ox + x0) / 12.0, (_oz + z0) / 12.0)
+			var uv10 := Vector2((_ox + x1) / 12.0, (_oz + z0) / 12.0)
+			var uv01 := Vector2((_ox + x0) / 12.0, (_oz + z1) / 12.0)
+			var uv11 := Vector2((_ox + x1) / 12.0, (_oz + z1) / 12.0)
 			for v in [[v00, n00, uv00], [v10, n10, uv10], [v11, n11, uv11],
 					[v00, n00, uv00], [v11, n11, uv11], [v01, n01, uv01]]:
 				st.set_normal(v[1])
@@ -100,12 +105,45 @@ func build(material: Material) -> void:
 
 	_body = StaticBody3D.new()
 	_body.name = "TerrainCollision"
-	var cs := CollisionShape3D.new()
-	# Trimesh from the rendered mesh: collision can never disagree with the
-	# visible surface, and Godot 4.7's HeightMapShape3D has no cell_size.
-	cs.shape = mesh.create_trimesh_shape()
-	_body.add_child(cs)
+	_collision_shape = CollisionShape3D.new()
+	_collision_shape.shape = _make_collision_shape(high_detail_collision)
+	_body.add_child(_collision_shape)
 	add_child(_body)
+
+
+func _make_collision_shape(full_detail: bool) -> Shape3D:
+	if full_detail and _mesh_instance and _mesh_instance.mesh:
+		return _mesh_instance.mesh.create_trimesh_shape()
+	var col_segs: int = maxi(int(Config.CHUNK_SEGMENTS / 2), 16)
+	var col_step := Config.CHUNK_SIZE / float(col_segs)
+	var col_st := SurfaceTool.new()
+	col_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for gz in col_segs:
+		for gx in col_segs:
+			var x0 := float(gx) * col_step
+			var x1 := x0 + col_step
+			var z0 := float(gz) * col_step
+			var z1 := z0 + col_step
+			var h00 := field.height(_ox + x0, _oz + z0)
+			var h10 := field.height(_ox + x1, _oz + z0)
+			var h01 := field.height(_ox + x0, _oz + z1)
+			var h11 := field.height(_ox + x1, _oz + z1)
+			col_st.add_vertex(Vector3(x0, h00, z0))
+			col_st.add_vertex(Vector3(x1, h10, z0))
+			col_st.add_vertex(Vector3(x1, h11, z1))
+			col_st.add_vertex(Vector3(x0, h00, z0))
+			col_st.add_vertex(Vector3(x1, h11, z1))
+			col_st.add_vertex(Vector3(x0, h01, z1))
+	return col_st.commit().create_trimesh_shape()
+
+
+func upgrade_collision() -> void:
+	if not built or high_detail_collision or _collision_shape == null:
+		return
+	if _mesh_instance == null or _mesh_instance.mesh == null:
+		return
+	_collision_shape.shape = _make_collision_shape(true)
+	high_detail_collision = true
 
 
 func world_center() -> Vector3:
@@ -144,4 +182,5 @@ func dispose() -> void:
 	if _body:
 		_body.queue_free()
 		_body = null
+	_collision_shape = null
 	queue_free()
