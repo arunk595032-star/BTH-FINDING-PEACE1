@@ -331,23 +331,36 @@ func _idle_frame_time() -> Dictionary:
 	player.set_physics_process(true)
 	player.global_position = Vector3(-520, 0, 140)
 	player.global_position.y = world.field.height(-520, 140) + 1.5
+	var headless := DisplayServer.get_name() == "headless"
+	var sample_frames := 150 if headless else 600
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--frames="):
+			sample_frames = maxi(60, int(arg.substr(9)))
 	for i in 60:
 		await get_tree().process_frame
 	var frames: Array[float] = []
 	var prev := Time.get_ticks_usec()
-	for i in 150:
+	for i in sample_frames:
 		await get_tree().process_frame
 		var now := Time.get_ticks_usec()
 		frames.append(_ms(now - prev))
 		prev = now
+	var avg_ms := _avg(frames)
+	var p99_ms := _percentile(frames, 0.99)
 	return {
 		"frames": frames.size(),
-		"avg_ms": _avg(frames),
-		"p50_ms": _percentile(frames, 0.5),
-		"p95_ms": _percentile(frames, 0.95),
-		"max_ms": _max(frames),
+		"frame_interval_avg_ms": avg_ms,
+		"frame_interval_p50_ms": _percentile(frames, 0.5),
+		"frame_interval_p95_ms": _percentile(frames, 0.95),
+		"frame_interval_p99_ms": p99_ms,
+		"frame_interval_max_ms": _max(frames),
+		# Process-frame intervals are only a display-FPS estimate with a real
+		# display. Headless dummy-renderer values are deliberately null.
+		"fps_avg_estimate": null if headless else 1000.0 / maxf(avg_ms, 0.001),
+		"fps_1_percent_low_estimate": null if headless else 1000.0 / maxf(p99_ms, 0.001),
+		"gpu_metrics_available": not headless,
 		"pending_after": world.pending_chunks(),
-		"note": "headless dummy renderer: CPU-side scene/script cost only",
+		"note": "headless: CPU-side frame intervals only; display run: approximate frame-pacing FPS, not isolated GPU time" if headless else "display run: approximate frame-pacing FPS; GPU time is not separately exposed by this harness",
 	}
 
 
@@ -403,8 +416,15 @@ func _print_summary() -> void:
 	print("  streaming frame max   %.2f ms  p95 %.2f ms  spikes>16ms %d" % [
 		results["streaming"]["frame_max_ms"], results["streaming"]["frame_p95_ms"],
 		results["streaming"]["spikes_over_16ms"]])
-	print("  idle frame avg/p95    %.2f / %.2f ms" % [
-		results["idle_frame"]["avg_ms"], results["idle_frame"]["p95_ms"]])
+	print("  frame interval avg/p99 %.2f / %.2f ms" % [
+		results["idle_frame"]["frame_interval_avg_ms"],
+		results["idle_frame"]["frame_interval_p99_ms"]])
+	if results["idle_frame"]["fps_avg_estimate"] != null:
+		print("  FPS avg / 1 percent low est. %.1f / %.1f" % [
+			float(results["idle_frame"]["fps_avg_estimate"]),
+			float(results["idle_frame"]["fps_1_percent_low_estimate"])])
+	else:
+		print("  FPS / 1 percent low    unavailable (headless)")
 	print("  mesh %d  multimesh %d  surfaces %d  shadow casters %d" % [
 		results["inventory"]["mesh_instances"], results["inventory"]["multimesh_instances"],
 		results["inventory"]["surface_draw_proxy"], results["inventory"]["shadow_casters"]])
