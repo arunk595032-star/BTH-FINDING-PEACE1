@@ -18,7 +18,7 @@ godot --headless --path . --import
     -> 252-step asset import completed, 13 Poly Haven glTF scenes imported.
 
 godot --headless --path . res://tests/smoke_test.tscn
-    -> === 40 checks, 0 failed ===   (exit code 0)
+    -> === 40 checks, 0 failed ===   (exit code 0; previously recorded run)
     -> [BTH] World built in 3972 ms
        {"mask_ms":922,"far_terrain_ms":954,"vegetation_prep_ms":521,
         "water_ms":8,"structures_ms":1273,"total_ms":3972}
