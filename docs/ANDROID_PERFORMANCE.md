@@ -41,6 +41,10 @@ The touch layer is instantiated only on Android/iOS. Desktop keyboard and mouse 
 - When frame pacing stays comfortably below budget for several seconds, it recovers resolution slowly in 0.025 steps, up to the selected profile's scale.
 - The 2D HUD remains at the native viewport resolution.
 - Mobile directional shadow atlas is 2048 instead of desktop 4096; mobile shadow filtering and anisotropic filtering are reduced through platform overrides.
+- Mobile lighting uses lower HDRI energy, ambient energy and exposure, reduced fog scattering, and no glow bloom; desktop lighting values remain unchanged.
+- Mobile sun uses a lower-energy neutral-warm light and two shadow splits instead of four, with a shorter shadow distance.
+- Mobile foliage receives subtle fill light to keep back-facing leaf cards readable; tree MultiMeshes do not cast shadows on mobile. Desktop foliage and tree shadows remain unchanged.
+- The village clearing radius is slightly smaller on mobile so a few more trees appear around the settlement edge without placing trees inside building pads.
 - These are conservative controls. Dynamic resolution helps GPU-bound scenes; it cannot fix CPU-bound streaming or physics stalls.
 
 ## Frame generation / "AI frames"
