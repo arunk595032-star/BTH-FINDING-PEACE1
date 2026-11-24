@@ -177,8 +177,8 @@ and can be forced with `--quality=ultra|high|medium|low`.
 | Setting | Ultra (default) | High | Medium | Low / mobile-class |
 |---|---|---|---|---|
 | 3D render scale | 1.0 | 1.0 | 0.85 | 0.75 |
-| MSAA | 2x | 2x | off | off |
-| Shadow distance | 420 m | 340 m | 240 m | 150 m |
+| MSAA | 4x | 2x | off | off |
+| Shadow distance | 520 m | 340 m | 240 m | 150 m |
 | SSAO / SSIL | on / on | on / off | on / off | off / off |
 | Volumetric fog | on | on | off | off |
 | Stream radius | 448 m | 400 m | 320 m | 256 m |
@@ -290,3 +290,8 @@ forced bulk drains do not pollute runtime pump telemetry. The updated branch als
 reports normal route-pump counts/spikes separately. GitHub Actions must pass before
 these changes are described as runtime-tested. The 4 ms queue budget is a soft
 target because an individual chunk build is atomic.
+
+
+## World visual rebuild (November 24, 2026)
+
+The current visual-quality pass is tracked in PR #10. It improves conifer silhouettes, house wall readability and lot clearance, Silverwater lake outline and water reflection response, and desktop daylight/PC Ultra settings. See `docs/WORLD_VISUAL_REBUILD.md` for the exact scope and validation limits. The new PC Ultra profile uses 4x MSAA, 520 m directional shadows and 512 sky radiance resolution. These settings increase GPU cost; they are intended for capable desktop GPUs and do not change the Android-specific renderer path.
