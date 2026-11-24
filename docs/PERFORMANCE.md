@@ -175,6 +175,32 @@ and shader detail distances are new knobs.
 the Low profile is a scalable desktop setting, not a tested Android/iOS build.
 No mobile export template, renderer switch or touch input was added.
 
+## Latest CI validation snapshot (2026-11-24)
+
+A separate headless run on GitHub Actions using Godot 4.7.2 completed after the
+telemetry-isolation changes. This is a cloud-runner snapshot, **not an apples-to-apples
+comparison** with the earlier baseline host and not a real GPU/FPS result.
+
+| Metric | CI result |
+|---|---:|
+| World build total | 2,427 ms |
+| Terrain mesh build average / max | 1.96 / 1.99 ms |
+| Vegetation scatter average / max | 2.04 / 2.21 ms |
+| Full chunk average | 0.50 ms |
+| Chunk revisit average | 0.54 ms |
+| Route streaming frame max / p95 | 4.55 / 4.37 ms |
+| Route frames over 16 ms | 0 |
+| Idle headless frame average / p95 | 6.90 / 7.06 ms |
+| Static memory after streaming | 355.2 MB |
+| Surface draw proxy / shadow casters | 1,209 / 200 |
+
+The expanded smoke suite passed **41 checks, 0 failed**. Full GitHub Actions run:
+https://github.com/arunk595032-star/BTH-FINDING-PEACE1/actions/runs/45380178660
+
+The workflow now uploads `docs/perf_ci.json` as the `bth-perf-ci-report` artifact
+for 14 days on future successful runs. GPU frame time, FPS, 1% lows, VRAM and visual
+quality remain unmeasured because the runner is headless.
+
 ## Visual changes (must be reviewed on a GPU)
 
 1. Terrain beyond 208 m / 352 m uses 24 / 16 quads per chunk instead of 48.
