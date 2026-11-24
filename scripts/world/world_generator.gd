@@ -574,12 +574,9 @@ func _load_chunk(coord: Vector2i) -> void:
 	vegetation.scatter_chunk(chunk, coord)
 	vegetation.apply_lod(chunk, dist)
 	var t_end := Time.get_ticks_usec()
-	# Anything close to the player must be solid immediately; distant chunks
-	# get physics on the detail tick so shape building never lands in a
-	# streaming frame.
-	if player != null and dist <= 96.0:
-		chunk.enable_collision(_shape_for(coord))
-		perf["collision_enabled"] += 1
+	# Physics is attached by the detail tick (or synchronously at spawn), never
+	# inside the streaming pump: a full-resolution shape build is ~5 ms and
+	# would turn a chunk instantiation into a frame spike.
 	chunks[coord] = chunk
 	perf["chunk_loads"] += 1
 	perf["ms_lattice"] = float(perf["ms_lattice"]) + float(t_mesh - t0) / 1000.0

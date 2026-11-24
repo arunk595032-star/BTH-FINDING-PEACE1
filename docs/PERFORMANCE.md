@@ -47,24 +47,24 @@ godot --headless --path . res://tests/perf_bench.tscn -- --label=after
 
 | Metric | Baseline | Optimized | Change |
 |---|---|---|---|
-| World build total | 4 674 ms | 3 768 ms | -19% |
-| Far-terrain mesh build | 1 179 ms | 411 ms | **-65%** |
-| Splat mask bake | 1 030 ms | 885 ms | -14% |
-| Settlement build | 1 526 ms | 1 444 ms | -5% (run variance) |
-| Terrain chunk mesh build | **45.19 ms** | **2.72 ms** | **-94% (17x)** |
-| Vegetation scatter per chunk | 16.18 ms | 3.30 ms | **-80% (4.9x)** |
-| Fresh chunk load (`_load_chunk`) | **67.33 ms** | **0.80 ms** | **-99% main-thread** |
-| Height lattice (worker thread) | n/a (was inside build) | 26.2 ms | off the render thread |
-| Revisit of an unloaded chunk | **64.31 ms** | **0.77 ms** | **-99%** |
-| Streaming frame, 95th percentile | 206.86 ms | 7.28 ms | **-96%** |
-| Streaming frame, worst | **212.03 ms** | **11.84 ms** | **-94%** |
+| World build total | 4 674 ms | 4 033 ms | -14% |
+| Far-terrain mesh build | 1 179 ms | 436 ms | **-63%** |
+| Splat mask bake | 1 030 ms | 888 ms | -14% |
+| Settlement build | 1 526 ms | 1 643 ms | run variance |
+| Terrain chunk mesh build | **45.19 ms** | **2.80 ms** | **-94% (16x)** |
+| Vegetation scatter per chunk | 16.18 ms | 3.19 ms | **-80% (5.1x)** |
+| Fresh chunk load (`_load_chunk`) | **67.33 ms** | **0.66 ms** | **-99% main-thread** |
+| Height lattice (worker thread) | n/a (was inside build) | 23.8 ms | off the render thread |
+| Revisit of an unloaded chunk | **64.31 ms** | **0.89 ms** | **-99%** |
+| Streaming frame, 95th percentile | 206.86 ms | 11.78 ms | **-94%** |
+| Streaming frame, worst | **212.03 ms** | **12.15 ms** | **-94%** |
 | Frames over 16 ms (30 simulated frames) | 27 | **0** | eliminated |
 | Idle frame CPU, headless | 6.90 ms | 6.91 ms | unchanged |
 | Terrain triangles loaded (40 chunks) | 184 320 | 74 624 | **-60%** |
 | Shadow-casting nodes | 366 | 200 | **-45%** |
 | Surface draw proxy | 1 257 | 1 209 | -4% |
 | MultiMesh instances | 17 406 | 17 052 | -2% |
-| Static memory after streaming | 414.7 MB | 355.5 MB | **-59 MB (-14%)** |
+| Static memory after streaming | 414.7 MB | 355.3 MB | **-59 MB (-14%)** |
 | Terrain collision shapes (full radius) | 40 | 3-12 | only near the player |
 
 Interpretation:
@@ -72,10 +72,10 @@ Interpretation:
 * The 67.33 ms chunk load was the single worst stutter: a streaming frame that
   loaded three chunks took ~200 ms. Terrain height sampling (an analytic field,
   not a bitmap) and SurfaceTool-per-vertex meshing were the cause.
-* After the change, height sampling runs on `WorkerThreadPool` tasks (~26 ms
+* After the change, height sampling runs on `WorkerThreadPool` tasks (~24 ms
   per chunk of wall time, off the render thread), and the main thread only
   writes mesh arrays and MultiMeshes (~6 ms). The worst simulated streaming
-  frame dropped to 11.8 ms.
+  frame dropped to 12.2 ms; p95 ranged 7.3-11.8 ms across runs.
 * Idle CPU is unchanged because in headless mode the per-frame cost is dominated
   by the dummy renderer syncing ~1 200 surfaces / 17 000 MultiMesh instances,
   not by game scripts. That number is **not** a GPU frame time.
@@ -187,8 +187,8 @@ shadows, village and castle materials) is unchanged in settings.
 
 ## Remaining bottlenecks
 
-* **Startup 3.8 s**: structures 1.44 s (GDScript box/roof generation through
-  SurfaceTool), splat mask 0.89 s, far terrain 0.41 s, procedural vegetation
+* **Startup 4.0 s**: structures 1.64 s (GDScript box/roof generation through
+  SurfaceTool), splat mask 0.89 s, far terrain 0.44 s, procedural vegetation
   meshes/props 0.73 s. All one-time; no streaming hitch.
 * **Surface draw proxy ~1 200** at full 40-chunk radius (~17 000 vegetation
   instances). MultiMesh layers are per species because instances of different

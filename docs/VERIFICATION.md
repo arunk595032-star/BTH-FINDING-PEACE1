@@ -111,11 +111,11 @@ tag `bth-v1-baseline`). Full before/after evidence and limitations:
 godot --headless --path . res://tests/perf_bench.tscn -- --label=after
     -> === BTH performance benchmark ===
     -> chunks after 90 frames / forced: 31 / 40
-    -> terrain mesh avg 2.72 ms  vegetation avg 3.30 ms
-    -> revisit of an unloaded chunk 0.77 ms
-    -> streaming frame max 11.84 ms, p95 7.28 ms, 0 frames over 16 ms
+    -> terrain mesh avg 2.80 ms  vegetation avg 3.19 ms
+    -> revisit of an unloaded chunk 0.89 ms
+    -> streaming frame max 12.15 ms, p95 11.78 ms, 0 frames over 16 ms
     -> terrain triangles 74 624 (was 184 320), shadow-casting nodes 200 (was 366)
-    -> static memory 355.5 MB (was 414.7 MB)
+    -> static memory 355.3 MB (was 414.7 MB)
 
 godot --headless --path . --quit-after 300
     -> exit 0, no script/shader/error lines
