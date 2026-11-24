@@ -40,8 +40,9 @@ func _ready() -> void:
 
 	platform_mode = Quality.resolve_mode()
 	apply_quality(Quality.resolve(), false)
+	quality_name = Quality.resolve_saved_name()
 	quality.merge(Quality.load_settings(), true)
-	apply_graphics_settings(quality, false)
+	_apply_quality_values()
 	graphics_settings = GraphicsSettings.new()
 	graphics_settings.name = "GraphicsSettings"
 	add_child(graphics_settings)
@@ -145,7 +146,6 @@ func _apply_quality_values() -> void:
 				world.vegetation.apply_lod(chunk, distance)
 	if hud != null:
 		hud.set_quality(quality_name, "%s / %s" % [platform_mode.to_upper(), str(quality.get("label", "Custom"))])
-	Quality.save_state(platform_mode, quality_name, quality)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and (event as InputEventKey).pressed \
