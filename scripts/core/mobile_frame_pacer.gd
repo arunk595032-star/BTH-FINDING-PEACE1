@@ -30,7 +30,8 @@ func configure(viewport: Viewport, profile: Dictionary) -> void:
 
 func set_profile(profile: Dictionary) -> void:
 	_base_scale = clampf(float(profile.get("render_scale", _base_scale)), MIN_SCALE, 1.0)
-	_target_fps = maxf(float(profile.get("max_fps", _target_fps)), 30.0)
+	_target_fps = minf(maxf(float(profile.get("max_fps", _target_fps)), 30.0), 45.0)
+	_frame_time_ema = 1.0 / _target_fps
 	_current_scale = minf(_current_scale, _base_scale)
 	_apply_scale()
 
