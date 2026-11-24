@@ -228,7 +228,7 @@ shadows, village and castle materials) is unchanged in settings.
 
 ```
 godot --headless --path . res://tests/smoke_test.tscn
-    -> === 40 checks, 0 failed ===   (exit 0)
+    -> === 40 checks, 0 failed ===   (exit 0; previously recorded run)
 
 godot --headless --path . res://tests/perf_bench.tscn -- --label=after
     -> PERF_BENCH_DONE (exit 0)
@@ -237,9 +237,9 @@ godot --headless --path . --quit-after 300
     -> exit 0, no script/shader/error lines
 ```
 
-The smoke test now also asserts: lattice cache identity and hit counting, LOD
-agreement with distance, collision only inside the activation radius, far tree
-LOD meshes exist, quality profiles apply to the live world, no recorded normal
-streaming pump over 16 ms, and a 30+ chunk streaming radius. Forced bulk-drain
-helpers used by tests are excluded from runtime pump telemetry. The 4 ms queue
-budget is a soft target because an individual chunk build is atomic.
+The previously recorded 40-check run predates the telemetry-isolation regression
+check. The current branch contains 41 assertions; the added check verifies that
+forced bulk drains do not pollute runtime pump telemetry. The updated branch also
+reports normal route-pump counts/spikes separately. GitHub Actions must pass before
+these changes are described as runtime-tested. The 4 ms queue budget is a soft
+target because an individual chunk build is atomic.
