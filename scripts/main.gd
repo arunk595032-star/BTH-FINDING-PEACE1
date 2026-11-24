@@ -238,7 +238,7 @@ func _setup_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
-	sky.radiance_size = Sky.RADIANCE_SIZE_256
+	sky.radiance_size = Sky.RADIANCE_SIZE_512 if not _is_mobile_platform() else Sky.RADIANCE_SIZE_256
 	sky.process_mode = Sky.PROCESS_MODE_REALTIME
 	var panorama := PanoramaSkyMaterial.new()
 	panorama.panorama = load("res://assets/hdri/belfast_sunset_puresky_2k.hdr")
@@ -247,11 +247,11 @@ func _setup_environment() -> void:
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
-	env.ambient_light_energy = 0.68 if _is_mobile_platform() else 0.85
+	env.ambient_light_energy = 0.68 if _is_mobile_platform() else 0.72
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.88 if _is_mobile_platform() else 1.05
+	env.tonemap_exposure = 0.88 if _is_mobile_platform() else 0.96
 	env.tonemap_white = 6.0
 
 	env.ssao_enabled = true
@@ -290,8 +290,8 @@ func _setup_environment() -> void:
 
 	env.adjustment_enabled = true
 	env.adjustment_brightness = 1.0
-	env.adjustment_contrast = 1.03
-	env.adjustment_saturation = 1.04
+	env.adjustment_contrast = 1.04 if _is_mobile_platform() else 1.09
+	env.adjustment_saturation = 1.06 if _is_mobile_platform() else 1.12
 
 	environment.environment = env
 	add_child(environment)
@@ -300,17 +300,17 @@ func _setup_environment() -> void:
 func _setup_sun() -> void:
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_color = Color(1.0, 0.93, 0.82) if _is_mobile_platform() else Color(1.0, 0.86, 0.69)
-	sun.light_energy = 1.05 if _is_mobile_platform() else 1.75
-	sun.light_angular_distance = 0.7
+	sun.light_color = Color(1.0, 0.93, 0.82) if _is_mobile_platform() else Color(1.0, 0.94, 0.86)
+	sun.light_energy = 1.05 if _is_mobile_platform() else 1.28
+	sun.light_angular_distance = 0.45
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if _is_mobile_platform() else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 180.0 if _is_mobile_platform() else 420.0
+	sun.directional_shadow_max_distance = 180.0 if _is_mobile_platform() else 520.0
 	sun.directional_shadow_split_1 = 0.12
 	sun.directional_shadow_split_2 = 0.28
 	sun.directional_shadow_split_3 = 0.62
 	sun.shadow_bias = 0.035
 	sun.shadow_normal_bias = 1.4
-	sun.shadow_blur = 0.8 if _is_mobile_platform() else 1.2
+	sun.shadow_blur = 0.8 if _is_mobile_platform() else 1.25
 	sun.rotation_degrees = Vector3(-31.0, -116.0, 0.0)
 	add_child(sun)

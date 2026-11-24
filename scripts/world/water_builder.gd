@@ -198,13 +198,16 @@ func _build_lake(root: Node3D) -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var center := Vector3(6.0, 5.05, 966.0)
-	var radius := 186.0
-	var segs := 72
+	var radius_x := 164.0
+	var radius_z := 132.0
+	var segs := 96
 	var prev := Vector3.ZERO
 	var flow_col := Color(0.5, 1.0, 0.0)
 	for i in segs + 1:
 		var a := TAU * float(i) / float(segs)
-		var p := center + Vector3(cos(a) * radius, 0, sin(a) * radius)
+		var irregular := 1.0 + 0.035 * sin(a * 3.0 + 0.4) + 0.022 * sin(a * 7.0 - 0.8)
+		var p := center + Vector3(cos(a) * radius_x * irregular, 0.0,
+			sin(a) * radius_z * irregular)
 		if i > 0:
 			for v in [[center, Vector2(0.5, 0.5)], [prev, Vector2(0.5 + cos(a - TAU / segs) * 0.5, 0.5 + sin(a - TAU / segs) * 0.5)],
 					[p, Vector2(0.5 + cos(a) * 0.5, 0.5 + sin(a) * 0.5)]]:

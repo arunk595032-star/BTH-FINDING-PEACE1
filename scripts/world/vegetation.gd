@@ -185,40 +185,46 @@ func _build_conifer(variant: int, height: float) -> ArrayMesh:
 	var am := ArrayMesh.new()
 	var trunk := SurfaceTool.new()
 	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_trunk(trunk, height * 0.72, 0.30 + variant * 0.03, 0.05,
-		Vector2(sin(float(variant) * 2.1), cos(float(variant) * 1.7)), 7, 6)
+	_trunk(trunk, height * 0.94, 0.34 + variant * 0.035, 0.045,
+		Vector2(sin(float(variant) * 2.1), cos(float(variant) * 1.7)), 9, 9)
 	_add_surface(am, trunk, _bark_mat)
 
-	var fol := SurfaceTool.new()
-	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Layered spruce: visible trunk, upward/outward boughs and foliage at
+	# every tier. Avoids the old skirt-like silhouette made by oversized,
+	# steeply drooping cards.
+	var branches := SurfaceTool.new()
+	branches.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var foliage := SurfaceTool.new()
+	foliage.begin(Mesh.PRIMITIVE_TRIANGLES)
 	_rng.seed = 7717 + variant * 131
-	var levels := 8
-	for level in levels:
-		var t := 0.20 + 0.80 * (float(level) / float(levels - 1))
+	var tiers := 11
+	for tier in tiers:
+		var t := 0.18 + 0.76 * float(tier) / float(tiers - 1)
 		var y := t * height
-		# Fir silhouette: wide low skirt tapering to a spire.
-		var radius := pow(1.0 - t, 1.15) * height * 0.26 + 0.45
-		var cards := 8 - level / 3
-		for c in cards:
-			var ang := TAU * float(c) / float(cards) + _rng.randf_range(-0.3, 0.3)
+		var radius := pow(1.0 - t, 0.82) * height * 0.31 + 0.16
+		var count := 7 if tier < 8 else 5
+		for c in count:
+			var ang := TAU * (float(c) / float(count) + float(tier) * 0.173)
+			ang += _rng.randf_range(-0.10, 0.10)
 			var dir := Vector3(cos(ang), 0.0, sin(ang))
-			var outward := radius * _rng.randf_range(0.55, 0.95)
-			var down := -0.55 - _rng.randf_range(0.0, 0.35)
-			var center := dir * outward + Vector3(0, y + _rng.randf_range(-0.3, 0.3), 0)
-			var basis := _card_basis(dir, down)
-			var shade := lerpf(0.52, 1.0, t * 0.8 + _rng.randf_range(-0.1, 0.1))
-			var size := Vector2(radius * _rng.randf_range(1.5, 2.2),
-				radius * _rng.randf_range(1.0, 1.6))
-			_card(fol, center, size, basis, Color(shade * 0.86, shade, shade * 0.82))
-	# Crown spire.
-	for c in 4:
-		var ang2 := TAU * float(c) / 4.0
-		var dir2 := Vector3(cos(ang2), 0, sin(ang2))
-		_card(fol, Vector3(0, height * 0.97, 0), Vector2(height * 0.16, height * 0.2),
-			_card_basis(dir2, -1.2), Color(0.9, 1.0, 0.88))
-	_add_surface(am, fol, _conifer_mat)
+			var start := Vector3(0.0, y, 0.0)
+			var reach := radius * _rng.randf_range(0.78, 1.08)
+			var tip := dir * reach + Vector3(0.0, radius * 0.12, 0.0)
+			_branch(branches, start, tip, maxf(0.035, 0.095 * (1.0 - t * 0.55)))
+			var leaf_dir := (dir + Vector3(0.0, 0.16, 0.0)).normalized()
+			var leaf_center := tip + leaf_dir * 0.12
+			var shade := _rng.randf_range(0.72, 1.02) * lerpf(0.82, 1.0, t)
+			var leaf_size := Vector2(maxf(0.55, radius * 0.78), maxf(0.32, radius * 0.42))
+			_card(foliage, leaf_center, leaf_size, _card_basis(leaf_dir, -0.18),
+				Color(shade * 0.72, shade, shade * 0.76))
+			# A smaller second cluster gives depth without creating a solid skirt.
+			if c % 2 == 0:
+				var side_dir := Vector3(-dir.z, 0.08, dir.x).normalized()
+				_card(foliage, tip - dir * 0.16, leaf_size * 0.68,
+					_card_basis(side_dir, -0.08), Color(shade * 0.68, shade * 0.94, shade * 0.72))
+	_add_surface(am, branches, _bark_mat)
+	_add_surface(am, foliage, _conifer_mat)
 	return am
-
 
 func _build_broadleaf(variant: int) -> ArrayMesh:
 	var am := ArrayMesh.new()
@@ -381,30 +387,31 @@ func _build_rock(scale: float, seed_base: int) -> ArrayMesh:
 
 
 func _build_conifer_far(height: float) -> ArrayMesh:
-	# Distant conifer: sparse 5-sided trunk and 9 cards instead of ~64.
+	# Far LOD retains a full tapered crown, but uses fewer tiers and boughs.
 	var am := ArrayMesh.new()
 	var trunk := SurfaceTool.new()
 	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_trunk(trunk, height * 0.72, 0.34, 0.07, Vector2.ZERO, 5, 3)
+	_trunk(trunk, height * 0.94, 0.34, 0.06, Vector2.ZERO, 6, 4)
 	_add_surface(am, trunk, _bark_mat)
-	var fol := SurfaceTool.new()
-	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_rng.seed = 8801
-	for level in 3:
-		var t := 0.30 + 0.62 * (float(level) / 2.0)
+	var branches := SurfaceTool.new()
+	branches.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var foliage := SurfaceTool.new()
+	foliage.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for tier in 6:
+		var t := 0.20 + 0.72 * float(tier) / 5.0
 		var y := t * height
-		var radius := pow(1.0 - t, 1.15) * height * 0.26 + 0.5
-		for c in 3:
-			var ang := TAU * float(c) / 3.0 + float(level) * 0.7
+		var radius := pow(1.0 - t, 0.84) * height * 0.30 + 0.18
+		for c in 5:
+			var ang := TAU * (float(c) / 5.0 + float(tier) * 0.19)
 			var dir := Vector3(cos(ang), 0.0, sin(ang))
-			var center := dir * radius * 0.55 + Vector3(0, y, 0)
-			var basis := _card_basis(dir, -0.5)
-			var shade := lerpf(0.55, 0.95, t)
-			_card(fol, center, Vector2(radius * 2.0, radius * 1.25), basis,
-				Color(shade * 0.86, shade, shade * 0.82))
-	_add_surface(am, fol, _conifer_mat)
+			var tip := dir * radius * 0.92 + Vector3(0.0, radius * 0.1, 0.0)
+			_branch(branches, Vector3(0.0, y, 0.0), tip, 0.055)
+			var size := Vector2(maxf(0.5, radius * 0.72), maxf(0.28, radius * 0.38))
+			_card(foliage, tip, size, _card_basis(dir, -0.15),
+				Color(0.58, 0.76, 0.60))
+	_add_surface(am, branches, _bark_mat)
+	_add_surface(am, foliage, _conifer_mat)
 	return am
-
 
 func _build_broadleaf_far(variant: int) -> ArrayMesh:
 	var am := ArrayMesh.new()
@@ -580,6 +587,15 @@ func _generate_chunk(chunk: Node3D, coord: Vector2i) -> Dictionary:
 			[Config.HAMLET_CENTER, 80.0],
 			[Config.RUINS_SITE, 70.0],
 			[Config.VILLAGE_CENTER + Vector2(24, 190), 92.0 if _mobile_mode else 110.0],
+			# House footprints (each lot has a conservative 13-16 m tree-free apron).
+			[Vector2(-224, 148), 14.0], [Vector2(-224, 182), 13.0],
+			[Vector2(-222, 296), 15.0], [Vector2(-224, 330), 14.0],
+			[Vector2(-170, 166), 15.0], [Vector2(-168, 200), 13.0],
+			[Vector2(-170, 306), 14.0], [Vector2(-168, 340), 13.0],
+			[Vector2(-262, 172), 14.0], [Vector2(-260, 252), 14.0],
+			[Vector2(-262, 316), 13.0], [Vector2(-136, 186), 14.0],
+			[Vector2(-134, 262), 15.0], [Vector2(-136, 320), 13.0],
+			[Vector2(-300, 226), 14.0],
 		]
 
 	var candidates := 260
@@ -624,12 +640,16 @@ func _generate_chunk(chunk: Node3D, coord: Vector2i) -> Dictionary:
 			var xf := _xform(Vector3(wx, h - 0.12, wz), scale, _rng.randf() * TAU)
 			(layers[species] as Array).append(xf)
 			# A second tree just behind the first thickens the canopy.
-			if _rng.randf() < 0.55:
+			if _rng.randf() < 0.38:
 				var wx2 := wx + _rng.randf_range(-3.5, 3.5)
 				var wz2 := wz + _rng.randf_range(-3.5, 3.5)
-				var h2: float = chunk.sample_height(wx2, wz2)
-				(layers[species] as Array).append(
-					_xform(Vector3(wx2, h2 - 0.12, wz2), _rng.randf_range(0.65, 1.1), _rng.randf() * TAU))
+				var water2: Vector3 = field.river_info(wx2, wz2)
+				var clear2 := water2.z * 0.5 + 6.0
+				if not _near_pad(wx2, wz2) and field.distance_to_road(wx2, wz2) > 5.0 \
+						and water2.x > clear2:
+					var h2: float = chunk.sample_height(wx2, wz2)
+					(layers[species] as Array).append(
+						_xform(Vector3(wx2, h2 - 0.12, wz2), _rng.randf_range(0.65, 1.1), _rng.randf() * TAU))
 			if slope > 0.45 and _rng.randf() < 0.10:
 				(layers["Snags"] as Array).append(_xform(Vector3(wx, h, wz), 1.0, _rng.randf() * TAU))
 
