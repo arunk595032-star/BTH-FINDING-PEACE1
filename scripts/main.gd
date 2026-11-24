@@ -7,6 +7,7 @@ const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Player = preload("res://player/player.gd")
 const HUD = preload("res://ui/hud.gd")
 const GraphicsSettings = preload("res://ui/graphics_settings.gd")
+const MobileTouchControls = preload("res://ui/mobile_touch_controls.gd")
 
 var world
 var player
@@ -17,6 +18,7 @@ var quality_name := "ultra"
 var quality: Dictionary = Quality.PROFILES["ultra"].duplicate(true)
 var platform_mode := "pc"
 var graphics_settings
+var mobile_touch_controls
 
 
 func _ready() -> void:
@@ -37,6 +39,14 @@ func _ready() -> void:
 	hud.name = "HUD"
 	add_child(hud)
 	hud.bind(world, player, self)
+
+	var is_mobile := OS.has_feature("android") or OS.has_feature("ios")
+	hud.set_mobile_mode(is_mobile)
+	if is_mobile:
+		mobile_touch_controls = MobileTouchControls.new()
+		mobile_touch_controls.name = "MobileTouchControls"
+		add_child(mobile_touch_controls)
+		mobile_touch_controls.bind(player)
 
 	platform_mode = Quality.resolve_mode()
 	apply_quality(Quality.resolve(), false)
@@ -108,6 +118,7 @@ func set_graphics_mode(mode: String) -> void:
 	Quality.save_mode(mode)
 	apply_quality(Quality.default_profile(mode))
 
+
 func apply_graphics_settings(values: Dictionary, persist := true) -> void:
 	quality.merge(values, true)
 	quality_name = "custom"
@@ -115,9 +126,11 @@ func apply_graphics_settings(values: Dictionary, persist := true) -> void:
 	if persist:
 		Quality.save_state(platform_mode, quality_name, quality)
 
+
 func open_graphics_settings() -> void:
 	if graphics_settings != null:
 		graphics_settings.open_settings(platform_mode, quality_name, quality)
+
 
 func _apply_quality_values() -> void:
 	var vp := get_viewport()
@@ -146,6 +159,7 @@ func _apply_quality_values() -> void:
 				world.vegetation.apply_lod(chunk, distance)
 	if hud != null:
 		hud.set_quality(quality_name, "%s / %s" % [platform_mode.to_upper(), str(quality.get("label", "Custom"))])
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and (event as InputEventKey).pressed \
