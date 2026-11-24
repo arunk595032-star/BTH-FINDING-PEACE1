@@ -94,7 +94,7 @@ func apply_quality(name: String, announce := true) -> void:
 				world.vegetation.apply_lod(chunk, d)
 
 	if hud != null:
-		hud.set_quality(name, str(quality["label"]))
+		hud.set_quality(name, "%s / %s" % [platform_mode.to_upper(), str(quality["label"])])
 	if announce:
 		print("[BTH] quality -> %s (%s)" % [name, quality["label"]])
 		Quality.save_state(platform_mode, name, quality)
