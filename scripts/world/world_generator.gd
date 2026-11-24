@@ -16,6 +16,7 @@ const TerrainChunk = preload("res://scripts/world/terrain_chunk.gd")
 const Vegetation = preload("res://scripts/world/vegetation.gd")
 const WaterBuilder = preload("res://scripts/world/water_builder.gd")
 const Structures = preload("res://scripts/world/structures.gd")
+const Assets = preload("res://scripts/core/asset_library.gd")
 
 const FAR_SEGMENTS := 192
 const FAR_HIDE := 430.0
@@ -110,7 +111,9 @@ func _ready() -> void:
 	_chunk_root.name = "TerrainChunks"
 	add_child(_chunk_root)
 
+	var field_t := Time.get_ticks_msec()
 	field = TerrainField.new()
+	var field_ms := Time.get_ticks_msec() - field_t
 	var mask_t := Time.get_ticks_msec()
 	_build_terrain_material()
 	var mask_ms := Time.get_ticks_msec() - mask_t
@@ -139,13 +142,14 @@ func _ready() -> void:
 	generation_ms = Time.get_ticks_msec() - t0
 	build_report = {
 		"mask_ms": mask_ms,
-		"field_ms": far_ms,
+		"field_ms": field_ms,
 		"far_terrain_ms": far_ms,
 		"vegetation_prep_ms": veg_ms,
 		"water_ms": wat_ms,
 		"structures_ms": str_ms,
 		"structures_detail": structures.build_timings.duplicate(true),
 		"structures_counts": structures.stats.duplicate(true),
+		"asset_profile": Assets.get_profile_stats(),
 		"total_ms": generation_ms,
 		"world_size": Config.WORLD_SIZE,
 		"seed": Config.SEED,
