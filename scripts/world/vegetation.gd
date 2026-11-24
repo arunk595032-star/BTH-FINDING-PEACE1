@@ -387,30 +387,31 @@ func _build_rock(scale: float, seed_base: int) -> ArrayMesh:
 
 
 func _build_conifer_far(height: float) -> ArrayMesh:
-	# Distant conifer: sparse 5-sided trunk and 9 cards instead of ~64.
+	# Far LOD retains a full tapered crown, but uses fewer tiers and boughs.
 	var am := ArrayMesh.new()
 	var trunk := SurfaceTool.new()
 	trunk.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_trunk(trunk, height * 0.72, 0.34, 0.07, Vector2.ZERO, 5, 3)
+	_trunk(trunk, height * 0.94, 0.34, 0.06, Vector2.ZERO, 6, 4)
 	_add_surface(am, trunk, _bark_mat)
-	var fol := SurfaceTool.new()
-	fol.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_rng.seed = 8801
-	for level in 3:
-		var t := 0.30 + 0.62 * (float(level) / 2.0)
+	var branches := SurfaceTool.new()
+	branches.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var foliage := SurfaceTool.new()
+	foliage.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for tier in 6:
+		var t := 0.20 + 0.72 * float(tier) / 5.0
 		var y := t * height
-		var radius := pow(1.0 - t, 1.15) * height * 0.26 + 0.5
-		for c in 3:
-			var ang := TAU * float(c) / 3.0 + float(level) * 0.7
+		var radius := pow(1.0 - t, 0.84) * height * 0.30 + 0.18
+		for c in 5:
+			var ang := TAU * (float(c) / 5.0 + float(tier) * 0.19)
 			var dir := Vector3(cos(ang), 0.0, sin(ang))
-			var center := dir * radius * 0.55 + Vector3(0, y, 0)
-			var basis := _card_basis(dir, -0.5)
-			var shade := lerpf(0.55, 0.95, t)
-			_card(fol, center, Vector2(radius * 2.0, radius * 1.25), basis,
-				Color(shade * 0.86, shade, shade * 0.82))
-	_add_surface(am, fol, _conifer_mat)
+			var tip := dir * radius * 0.92 + Vector3(0.0, radius * 0.1, 0.0)
+			_branch(branches, Vector3(0.0, y, 0.0), tip, 0.055)
+			var size := Vector2(maxf(0.5, radius * 0.72), maxf(0.28, radius * 0.38))
+			_card(foliage, tip, size, _card_basis(dir, -0.15),
+				Color(0.58, 0.76, 0.60))
+	_add_surface(am, branches, _bark_mat)
+	_add_surface(am, foliage, _conifer_mat)
 	return am
-
 
 func _build_broadleaf_far(variant: int) -> ArrayMesh:
 	var am := ArrayMesh.new()
