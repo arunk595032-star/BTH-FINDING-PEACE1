@@ -34,6 +34,7 @@ var _asset_meshes: Dictionary = {}
 
 func setup(p_field: RefCounted) -> void:
 	field = p_field
+	_mobile_mode = OS.has_feature("android") or OS.has_feature("ios")
 	_build_materials()
 	meshes["conifer_a"] = _build_conifer(0, 13.0)
 	meshes["conifer_b"] = _build_conifer(1, 17.5)
@@ -94,6 +95,7 @@ func _foliage_material(path: String, wind: float, rough: float, tint: Color) -> 
 	mat.set_shader_parameter("wind_strength", wind)
 	mat.set_shader_parameter("roughness_value", rough)
 	mat.set_shader_parameter("use_vertex_color", 1.0)
+	mat.set_shader_parameter("mobile_fill", 0.22 if _mobile_mode else 0.0)
 	if ResourceLoader.exists(path):
 		mat.set_shader_parameter("albedo_tex", load(path))
 	return mat
@@ -451,6 +453,7 @@ var _cache_order: Array[Vector2i] = []
 var _veg_scale := 1.0
 var _tree_end := 900.0
 var _tree_lod := 260.0
+var _mobile_mode := false
 var _pads: Array = []
 
 
@@ -469,7 +472,7 @@ func _end_for(layer: String) -> float:
 
 func _casts_shadows(layer: String) -> bool:
 	if TREE_LAYERS.has(layer):
-		return true
+		return not _mobile_mode
 	return layer == "Rocks" or layer == "PHRooibos" or layer == "PHTrunk" or layer == "PHStones"
 
 
@@ -513,7 +516,7 @@ func apply_lod(chunk: Node3D, distance: float) -> void:
 			var near_mm = entry["mm_near"].get(layer)
 			if near_mm != null:
 				mmi.multimesh = near_mm
-			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if _casts_shadows(layer) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _multimesh(mesh: ArrayMesh, transforms: Array) -> MultiMesh:
@@ -572,11 +575,11 @@ func _generate_chunk(chunk: Node3D, coord: Vector2i) -> Dictionary:
 
 	if _pads.is_empty():
 		_pads = [
-			[Config.VILLAGE_CENTER, 150.0],
+			[Config.VILLAGE_CENTER, 112.0 if _mobile_mode else 150.0],
 			[Config.CASTLE_CENTER, 105.0],
 			[Config.HAMLET_CENTER, 80.0],
 			[Config.RUINS_SITE, 70.0],
-			[Config.VILLAGE_CENTER + Vector2(24, 190), 110.0],
+			[Config.VILLAGE_CENTER + Vector2(24, 190), 92.0 if _mobile_mode else 110.0],
 		]
 
 	var candidates := 260

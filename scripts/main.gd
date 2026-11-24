@@ -7,6 +7,8 @@ const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Player = preload("res://player/player.gd")
 const HUD = preload("res://ui/hud.gd")
 const GraphicsSettings = preload("res://ui/graphics_settings.gd")
+const MobileTouchControls = preload("res://ui/mobile_touch_controls.gd")
+const MobileFramePacer = preload("res://scripts/core/mobile_frame_pacer.gd")
 
 var world
 var player
@@ -17,6 +19,8 @@ var quality_name := "ultra"
 var quality: Dictionary = Quality.PROFILES["ultra"].duplicate(true)
 var platform_mode := "pc"
 var graphics_settings
+var mobile_touch_controls
+var mobile_frame_pacer
 
 
 func _ready() -> void:
@@ -38,11 +42,24 @@ func _ready() -> void:
 	add_child(hud)
 	hud.bind(world, player, self)
 
+	var is_mobile := OS.has_feature("android") or OS.has_feature("ios")
+	hud.set_mobile_mode(is_mobile)
+	if is_mobile:
+		mobile_touch_controls = MobileTouchControls.new()
+		mobile_touch_controls.name = "MobileTouchControls"
+		add_child(mobile_touch_controls)
+		mobile_touch_controls.bind(player)
+
 	platform_mode = Quality.resolve_mode()
 	apply_quality(Quality.resolve(), false)
 	quality_name = Quality.resolve_saved_name()
 	quality.merge(Quality.load_settings(), true)
 	_apply_quality_values()
+	if is_mobile:
+		mobile_frame_pacer = MobileFramePacer.new()
+		mobile_frame_pacer.name = "MobileFramePacer"
+		add_child(mobile_frame_pacer)
+		mobile_frame_pacer.configure(get_viewport(), quality)
 	graphics_settings = GraphicsSettings.new()
 	graphics_settings.name = "GraphicsSettings"
 	add_child(graphics_settings)
@@ -61,6 +78,7 @@ func apply_quality(name: String, announce := true) -> void:
 		name = Quality.default_profile(platform_mode)
 	quality_name = name
 	quality = Quality.profile(name)
+	_apply_mobile_quality_budget()
 	quality_name = name
 
 	var vp := get_viewport()
@@ -78,9 +96,9 @@ func apply_quality(name: String, announce := true) -> void:
 		env.ssao_enabled = bool(quality["ssao"])
 		env.ssil_enabled = bool(quality["ssil"])
 		env.volumetric_fog_enabled = bool(quality["volumetric_fog"])
-		env.glow_enabled = bool(quality["glow"])
+		env.glow_enabled = bool(quality["glow"]) and not _is_mobile_platform()
 
-	Engine.max_fps = int(quality["max_fps"])
+	Engine.max_fps = mini(int(quality["max_fps"]), 45) if OS.has_feature("android") else int(quality["max_fps"])
 
 	if world != null:
 		world.apply_quality(quality)
@@ -94,6 +112,8 @@ func apply_quality(name: String, announce := true) -> void:
 					c.z - world.player.global_position.z).length()
 				world.vegetation.apply_lod(chunk, d)
 
+	if mobile_frame_pacer != null:
+		mobile_frame_pacer.set_profile(quality)
 	if hud != null:
 		hud.set_quality(name, "%s / %s" % [platform_mode.to_upper(), str(quality["label"])])
 	if announce:
@@ -108,6 +128,7 @@ func set_graphics_mode(mode: String) -> void:
 	Quality.save_mode(mode)
 	apply_quality(Quality.default_profile(mode))
 
+
 func apply_graphics_settings(values: Dictionary, persist := true) -> void:
 	quality.merge(values, true)
 	quality_name = "custom"
@@ -115,9 +136,11 @@ func apply_graphics_settings(values: Dictionary, persist := true) -> void:
 	if persist:
 		Quality.save_state(platform_mode, quality_name, quality)
 
+
 func open_graphics_settings() -> void:
 	if graphics_settings != null:
 		graphics_settings.open_settings(platform_mode, quality_name, quality)
+
 
 func _apply_quality_values() -> void:
 	var vp := get_viewport()
@@ -133,8 +156,8 @@ func _apply_quality_values() -> void:
 		env.ssao_enabled = bool(quality.get("ssao", false))
 		env.ssil_enabled = bool(quality.get("ssil", false))
 		env.volumetric_fog_enabled = bool(quality.get("volumetric_fog", false))
-		env.glow_enabled = bool(quality.get("glow", true))
-	Engine.max_fps = int(quality.get("max_fps", 0))
+		env.glow_enabled = bool(quality.get("glow", true)) and not _is_mobile_platform()
+	Engine.max_fps = mini(int(quality.get("max_fps", 45)), 45) if OS.has_feature("android") else int(quality.get("max_fps", 0))
 	if world != null:
 		world.apply_quality(quality)
 		if world.water != null:
@@ -144,14 +167,69 @@ func _apply_quality_values() -> void:
 				var center: Vector3 = chunk.world_center()
 				var distance := Vector2(center.x - world.player.global_position.x, center.z - world.player.global_position.z).length()
 				world.vegetation.apply_lod(chunk, distance)
+	if mobile_frame_pacer != null:
+		mobile_frame_pacer.set_profile(quality)
 	if hud != null:
 		hud.set_quality(quality_name, "%s / %s" % [platform_mode.to_upper(), str(quality.get("label", "Custom"))])
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and (event as InputEventKey).pressed \
 			and not (event as InputEventKey).echo \
 			and (event as InputEventKey).keycode == KEY_F1:
 		apply_quality(Quality.next(quality_name))
+
+
+func _apply_mobile_quality_budget() -> void:
+	if not _is_mobile_platform():
+		return
+	# Keep PC profiles untouched. Medium preserves shadows; Low removes the costly mobile shadow pass.
+	if quality_name == "low":
+		quality.merge({
+			"render_scale": 0.62,
+			"shadows": false,
+			"shadow_distance": 0.0,
+			"ssao": false,
+			"ssil": false,
+			"volumetric_fog": false,
+			"glow": false,
+			"stream_radius": 192.0,
+			"chunk_budget": 1,
+			"stream_budget_us": 1400,
+			"collision_radius": 112.0,
+			"terrain_lod_near": 88.0,
+			"terrain_lod_mid": 152.0,
+			"terrain_detail_distance": 34.0,
+			"vegetation_scale": 0.42,
+			"tree_end": 360.0,
+			"tree_lod": 82.0,
+			"water_detail_distance": 32.0,
+			"mist_amount": 24,
+			"max_fps": 30
+		}, true)
+	elif quality_name == "medium":
+		quality.merge({
+			"render_scale": 0.76,
+			"shadow_distance": 150.0,
+			"shadow_blur": 0.6,
+			"stream_radius": 264.0,
+			"chunk_budget": 2,
+			"stream_budget_us": 2000,
+			"collision_radius": 148.0,
+			"terrain_lod_near": 126.0,
+			"terrain_lod_mid": 218.0,
+			"terrain_detail_distance": 52.0,
+			"vegetation_scale": 0.62,
+			"tree_end": 520.0,
+			"tree_lod": 126.0,
+			"water_detail_distance": 48.0,
+			"mist_amount": 38,
+			"max_fps": 45
+		}, true)
+
+
+func _is_mobile_platform() -> bool:
+	return OS.has_feature("android") or OS.has_feature("ios")
 
 
 func _setup_environment() -> void:
@@ -164,16 +242,16 @@ func _setup_environment() -> void:
 	sky.process_mode = Sky.PROCESS_MODE_REALTIME
 	var panorama := PanoramaSkyMaterial.new()
 	panorama.panorama = load("res://assets/hdri/belfast_sunset_puresky_2k.hdr")
-	panorama.energy_multiplier = 0.95
+	panorama.energy_multiplier = 0.72 if _is_mobile_platform() else 0.95
 	sky.sky_material = panorama
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
-	env.ambient_light_energy = 0.85
+	env.ambient_light_energy = 0.68 if _is_mobile_platform() else 0.85
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.05
+	env.tonemap_exposure = 0.88 if _is_mobile_platform() else 1.05
 	env.tonemap_white = 6.0
 
 	env.ssao_enabled = true
@@ -195,11 +273,11 @@ func _setup_environment() -> void:
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_light_color = Color(0.78, 0.72, 0.60)
-	env.fog_light_energy = 0.55
-	env.fog_sun_scatter = 0.32
-	env.fog_density = 0.0026
+	env.fog_light_energy = 0.38 if _is_mobile_platform() else 0.55
+	env.fog_sun_scatter = 0.12 if _is_mobile_platform() else 0.32
+	env.fog_density = 0.0018 if _is_mobile_platform() else 0.0026
 	env.fog_aerial_perspective = 0.55
-	env.fog_sky_affect = 0.25
+	env.fog_sky_affect = 0.12 if _is_mobile_platform() else 0.25
 
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.0075
@@ -222,17 +300,17 @@ func _setup_environment() -> void:
 func _setup_sun() -> void:
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_color = Color(1.0, 0.86, 0.69)
-	sun.light_energy = 1.75
+	sun.light_color = Color(1.0, 0.93, 0.82) if _is_mobile_platform() else Color(1.0, 0.86, 0.69)
+	sun.light_energy = 1.05 if _is_mobile_platform() else 1.75
 	sun.light_angular_distance = 0.7
 	sun.shadow_enabled = true
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = 420.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if _is_mobile_platform() else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 180.0 if _is_mobile_platform() else 420.0
 	sun.directional_shadow_split_1 = 0.12
 	sun.directional_shadow_split_2 = 0.28
 	sun.directional_shadow_split_3 = 0.62
 	sun.shadow_bias = 0.035
 	sun.shadow_normal_bias = 1.4
-	sun.shadow_blur = 1.2
+	sun.shadow_blur = 0.8 if _is_mobile_platform() else 1.2
 	sun.rotation_degrees = Vector3(-31.0, -116.0, 0.0)
 	add_child(sun)

@@ -12,6 +12,7 @@ uniform float alpha_cutoff = 0.42;
 uniform float translucency = 0.25;
 uniform float roughness_value = 0.82;
 uniform float use_vertex_color = 0.0;
+uniform float mobile_fill = 0.0;
 
 void vertex() {
 	vec3 world_origin = MODEL_MATRIX[3].xyz;
@@ -34,7 +35,8 @@ void fragment() {
 	ALBEDO = col;
 	ROUGHNESS = roughness_value;
 	SPECULAR = 0.25;
-	BACKLIGHT = col * translucency;
+	BACKLIGHT = col * max(translucency, mobile_fill * 1.6);
+	EMISSION = col * mobile_fill * 0.12;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
 	ALPHA = tex.a;
 }
