@@ -97,7 +97,7 @@ func apply_quality(name: String, announce := true) -> void:
 		env.volumetric_fog_enabled = bool(quality["volumetric_fog"])
 		env.glow_enabled = bool(quality["glow"])
 
-	Engine.max_fps = int(quality["max_fps"])
+	Engine.max_fps = mini(int(quality["max_fps"]), 45) if OS.has_feature("android") else int(quality["max_fps"])
 
 	if world != null:
 		world.apply_quality(quality)
@@ -156,7 +156,7 @@ func _apply_quality_values() -> void:
 		env.ssil_enabled = bool(quality.get("ssil", false))
 		env.volumetric_fog_enabled = bool(quality.get("volumetric_fog", false))
 		env.glow_enabled = bool(quality.get("glow", true))
-	Engine.max_fps = int(quality.get("max_fps", 0))
+	Engine.max_fps = mini(int(quality.get("max_fps", 45)), 45) if OS.has_feature("android") else int(quality.get("max_fps", 0))
 	if world != null:
 		world.apply_quality(quality)
 		if world.water != null:
