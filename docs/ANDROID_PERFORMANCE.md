@@ -21,6 +21,18 @@ This is an isolated Android-path change. It does not change PC's renderer or Ult
 
 The Mobile renderer has a different feature set. In particular, Forward+-only effects such as SSIL, volumetric fog, SSAO, TAA, and FSR2 are not available in the same way. The scene must be visually checked on actual Android hardware; unsupported environment effects may be omitted by the renderer. The Mobile renderer is not automatically faster for every scene, so device testing remains mandatory.
 
+## Temporary Android touch layout
+
+The first Android control layout is intentionally functional and replaceable:
+
+- Left virtual joystick drives the existing move actions.
+- Right-side touch drag controls the third-person camera.
+- Hold RUN to use the existing sprint action.
+- JUMP and USE trigger the existing jump and interaction actions.
+- The legacy keyboard help panel is hidden on mobile; the existing settings entry remains available.
+
+The touch layer is instantiated only on Android/iOS. Desktop keyboard and mouse input remain unchanged. The touch overlay is kept separate from player movement logic so a later visual redesign can replace it without rewriting gameplay controls.
+
 ## Smoothness strategy
 
 1. Establish a real-device baseline: renderer, GPU/driver, resolution, average FPS, frame-time percentiles, thermal state, memory, draw calls, and streaming spikes.
