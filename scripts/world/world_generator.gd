@@ -144,6 +144,8 @@ func _ready() -> void:
 		"vegetation_prep_ms": veg_ms,
 		"water_ms": wat_ms,
 		"structures_ms": str_ms,
+		"structures_detail": structures.build_timings.duplicate(true),
+		"structures_counts": structures.stats.duplicate(true),
 		"total_ms": generation_ms,
 		"world_size": Config.WORLD_SIZE,
 		"seed": Config.SEED,
