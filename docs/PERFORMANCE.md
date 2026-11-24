@@ -148,6 +148,15 @@ Interpretation:
   at exactly grid resolution, so bilinear lookups were redundant).
 * Spawn loads only 5 chunks synchronously (was 13), then streams.
 
+### Startup profiling (Phase 5)
+
+The world build report now includes `structures_detail`: per-stage CPU timings
+for village, farmland, castle, hamlet, watchtower, ruins, camp, cave, bridges,
+hero props, mesh commit, and collision construction. It also records the number
+of geometry material batches and collision boxes, plus the existing settlement
+counts. These values are diagnostic measurements from the current run; they do
+not imply that any one stage is a bottleneck until measured on the target host.
+
 ### Quality profiles (scripts/core/quality.gd)
 
 F1 cycles profiles at runtime; the choice is stored in `user://bth_settings.cfg`
