@@ -29,15 +29,16 @@ func _build() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(root)
 	_panel = PanelContainer.new()
-	_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_panel.offset_left = -300
-	_panel.offset_top = -330
-	_panel.offset_right = 300
-	_panel.offset_bottom = 330
+	_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_panel.offset_left = 12
+	_panel.offset_top = 12
+	_panel.offset_right = -12
+	_panel.offset_bottom = -12
 	_panel.visible = false
 	root.add_child(_panel)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(560, 610)
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_panel.add_child(scroll)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
@@ -67,7 +68,12 @@ func _build() -> void:
 	_add_slider(box, "Resolution scale", "render_scale", 0.5, 1.0, 0.05)
 	_add_slider(box, "Shadow distance", "shadow_distance", 50.0, 450.0, 10.0)
 	_add_slider(box, "Vegetation distance", "tree_end", 100.0, 1000.0, 25.0)
+	_add_slider(box, "Vegetation density", "vegetation_scale", 0.25, 1.0, 0.05)
 	_add_slider(box, "World view distance", "stream_radius", 160.0, 448.0, 16.0)
+	_add_slider(box, "Terrain detail distance", "terrain_detail_distance", 25.0, 120.0, 5.0)
+	_add_slider(box, "Water detail distance", "water_detail_distance", 25.0, 120.0, 5.0)
+	_add_slider(box, "Tree LOD distance", "tree_lod", 50.0, 300.0, 10.0)
+	_add_msaa(box)
 	_add_slider(box, "FPS limit (0 = unlimited)", "max_fps", 0.0, 120.0, 5.0)
 	_add_toggle(box, "Shadows", "shadows")
 	_add_toggle(box, "Ambient occlusion (SSAO)", "ssao")
@@ -93,6 +99,21 @@ func _add_slider(parent: VBoxContainer, title: String, key: String, low: float, 
 	parent.add_child(slider)
 	_controls[key] = slider
 
+func _add_msaa(parent: VBoxContainer) -> void:
+	var label := Label.new()
+	label.text = "Anti-aliasing"
+	parent.add_child(label)
+	var choice := OptionButton.new()
+	for item in ["Off", "2x MSAA", "4x MSAA", "8x MSAA"]:
+		choice.add_item(item)
+	choice.custom_minimum_size.y = 48
+	choice.item_selected.connect(func(index: int):
+		_values["msaa"] = index
+		_apply()
+	)
+	parent.add_child(choice)
+	_controls["msaa"] = choice
+
 func _add_toggle(parent: VBoxContainer, title: String, key: String) -> void:
 	var toggle := CheckButton.new()
 	toggle.text = title
@@ -108,6 +129,8 @@ func _sync_controls() -> void:
 			control.set_value_no_signal(float(_values.get(key, 0.0)))
 		elif control is CheckButton:
 			control.set_pressed_no_signal(bool(_values.get(key, false)))
+		elif control is OptionButton:
+			control.select(clampi(int(_values.get(key, 0)), 0, control.item_count - 1))
 
 func _on_mode_selected(index: int) -> void:
 	if _main != null:
