@@ -20,6 +20,7 @@ var _refresh := 0.0
 var _main
 var _quality_text := "Ultra (PC)"
 var _settings_button: Button
+var _mobile_layout := false
 
 
 func _ready() -> void:
@@ -153,6 +154,16 @@ func bind(world_node, player_node, main_node = null) -> void:
 	_update_labels()
 
 
+func set_mobile_mode(enabled: bool) -> void:
+	_mobile_layout = enabled
+	if _panel != null and enabled:
+		_panel.visible = false
+	if _settings_button != null and enabled:
+		_settings_button.text = "SETTINGS"
+		_settings_button.custom_minimum_size = Vector2(128, 48)
+		_settings_button.position = Vector2(-148, 82)
+
+
 func set_quality(name: String, label: String) -> void:
 	_quality_text = "%s (%s)" % [label, name]
 	if _quality_label != null:
@@ -160,7 +171,7 @@ func set_quality(name: String, label: String) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("toggle_help"):
+	if not _mobile_layout and event.is_action_pressed("toggle_help"):
 		_panel.visible = not _panel.visible
 
 
