@@ -6,6 +6,7 @@ const Quality = preload("res://scripts/core/quality.gd")
 const WorldGen = preload("res://scripts/world/world_generator.gd")
 const Player = preload("res://player/player.gd")
 const HUD = preload("res://ui/hud.gd")
+const GraphicsSettings = preload("res://ui/graphics_settings.gd")
 
 var world
 var player
@@ -13,7 +14,9 @@ var hud: CanvasLayer
 var environment: WorldEnvironment
 var sun: DirectionalLight3D
 var quality_name := "ultra"
-var quality: Dictionary = Quality.PROFILES["ultra"]
+var quality: Dictionary = Quality.PROFILES["ultra"].duplicate(true)
+var platform_mode := "pc"
+var graphics_settings
 
 
 func _ready() -> void:
@@ -35,7 +38,14 @@ func _ready() -> void:
 	add_child(hud)
 	hud.bind(world, player, self)
 
+	platform_mode = Quality.resolve_mode()
 	apply_quality(Quality.resolve(), false)
+	quality.merge(Quality.load_settings(), true)
+	apply_graphics_settings(quality, false)
+	graphics_settings = GraphicsSettings.new()
+	graphics_settings.name = "GraphicsSettings"
+	add_child(graphics_settings)
+	graphics_settings.bind(self)
 
 	print("[BTH] %s" % JSON.stringify(world.report()))
 	print("[BTH] spawn at %s  region %s" % [
@@ -47,9 +57,10 @@ func _ready() -> void:
 # ---------------------------------------------------------------------------
 func apply_quality(name: String, announce := true) -> void:
 	if not Quality.has_profile(name):
-		name = "ultra"
+		name = Quality.default_profile(platform_mode)
 	quality_name = name
 	quality = Quality.profile(name)
+	quality_name = name
 
 	var vp := get_viewport()
 	if vp != null:
@@ -57,6 +68,7 @@ func apply_quality(name: String, announce := true) -> void:
 		vp.msaa_3d = int(quality["msaa"])
 
 	if sun != null:
+		sun.shadow_enabled = bool(quality.get("shadows", true))
 		sun.directional_shadow_max_distance = float(quality["shadow_distance"])
 		sun.shadow_blur = float(quality["shadow_blur"])
 
@@ -85,8 +97,55 @@ func apply_quality(name: String, announce := true) -> void:
 		hud.set_quality(name, str(quality["label"]))
 	if announce:
 		print("[BTH] quality -> %s (%s)" % [name, quality["label"]])
-		Quality.save(name)
+		Quality.save_state(platform_mode, name, quality)
 
+
+func set_graphics_mode(mode: String) -> void:
+	if mode not in ["pc", "phone"]:
+		return
+	platform_mode = mode
+	Quality.save_mode(mode)
+	apply_quality(Quality.default_profile(mode))
+
+func apply_graphics_settings(values: Dictionary, persist := true) -> void:
+	quality.merge(values, true)
+	quality_name = "custom"
+	_apply_quality_values()
+	if persist:
+		Quality.save_state(platform_mode, quality_name, quality)
+
+func open_graphics_settings() -> void:
+	if graphics_settings != null:
+		graphics_settings.open_settings(platform_mode, quality_name, quality)
+
+func _apply_quality_values() -> void:
+	var vp := get_viewport()
+	if vp != null:
+		vp.scaling_3d_scale = clampf(float(quality.get("render_scale", 1.0)), 0.5, 1.0)
+		vp.msaa_3d = int(quality.get("msaa", 0))
+	if sun != null:
+		sun.shadow_enabled = bool(quality.get("shadows", true))
+		sun.directional_shadow_max_distance = float(quality.get("shadow_distance", 240.0))
+		sun.shadow_blur = float(quality.get("shadow_blur", 0.9))
+	if environment != null and environment.environment != null:
+		var env := environment.environment
+		env.ssao_enabled = bool(quality.get("ssao", false))
+		env.ssil_enabled = bool(quality.get("ssil", false))
+		env.volumetric_fog_enabled = bool(quality.get("volumetric_fog", false))
+		env.glow_enabled = bool(quality.get("glow", true))
+	Engine.max_fps = int(quality.get("max_fps", 0))
+	if world != null:
+		world.apply_quality(quality)
+		if world.water != null:
+			world.water.set_quality(quality)
+		if world.vegetation != null and world.player != null:
+			for chunk in world.chunks.values():
+				var center: Vector3 = chunk.world_center()
+				var distance := Vector2(center.x - world.player.global_position.x, center.z - world.player.global_position.z).length()
+				world.vegetation.apply_lod(chunk, distance)
+	if hud != null:
+		hud.set_quality(quality_name, "%s / %s" % [platform_mode.to_upper(), str(quality.get("label", "Custom"))])
+	Quality.save_state(platform_mode, quality_name, quality)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and (event as InputEventKey).pressed \
