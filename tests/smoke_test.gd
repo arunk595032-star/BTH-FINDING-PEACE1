@@ -144,6 +144,10 @@ func run_tests() -> void:
 
 	# --- performance regressions ------------------------------------------
 	world.force_detail_update()
+	var pumps_before_forced_drain := int(world.perf["pump_count"])
+	world.force_stream_complete()
+	check(int(world.perf["pump_count"]) == pumps_before_forced_drain,
+		"forced bulk streaming drain excluded from runtime pump telemetry")
 	var perf_stats: Dictionary = world.perf
 	check(int(perf_stats["chunk_loads"]) > 0, "chunk loads tracked")
 	var coord: Vector2i = world.chunk_coord(player.global_position)
