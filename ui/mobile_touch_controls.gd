@@ -63,7 +63,6 @@ func _begin_touch(index: int, pos: Vector2) -> void:
 		_surface.queue_redraw()
 	elif _interact_touch == -1 and _interact_rect(size).has_point(pos):
 		_interact_touch = index
-		Input.action_press("interact")
 		_surface.queue_redraw()
 	elif _look_touch == -1 and pos.x > size.x * 0.42:
 		_look_touch = index
@@ -84,7 +83,8 @@ func _end_touch(index: int) -> void:
 		Input.action_release("jump")
 	if index == _interact_touch:
 		_interact_touch = -1
-		Input.action_release("interact")
+		if player != null:
+			player.call("_interact")
 	_surface.queue_redraw()
 
 
