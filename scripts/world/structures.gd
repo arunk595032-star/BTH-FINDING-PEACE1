@@ -38,7 +38,9 @@ func setup(p_field: RefCounted) -> void:
 	field = p_field
 	_mat_stone = Mats.stone()
 	_mat_brick = Mats.brick()
-	_mat_plaster = Mats.plaster()
+	_mat_plaster = Mats.plaster().duplicate()
+	_mat_plaster.albedo_color = Color(0.82, 0.77, 0.68)
+	_mat_plaster.roughness = 0.92
 	_mat_timber = Mats.timber()
 	_mat_wood = Mats.wood()
 	_mat_roof = Mats.roof()
@@ -189,6 +191,18 @@ func _house(center: Vector2, yaw: float, width: float, depth: float, floors: int
 		_box("dark", _mat_dark, base,
 			Vector3(w * 0.2, plinth_h + 1.75 + level * 3.0, -d * 0.5 - 0.05),
 			Vector3(0.8, 0.95, 0.1), 0.0, 0.0, false, 1.0)
+
+	# Side-wall windows make the building read as a complete four-sided house.
+	for level in window_rows:
+		for side in [-1.0, 1.0]:
+			var side_x := side * (w * 0.5 + 0.055)
+			var side_y := plinth_h + 1.78 + float(level) * 3.0
+			_box("dark", _mat_dark, base, Vector3(side_x, side_y, -d * 0.18),
+				Vector3(0.10, 0.92, 0.78), 0.0, 0.0, false, 1.0)
+			_box("timber", _mat_timber, base, Vector3(side_x * 1.015, side_y + 0.52, -d * 0.18),
+				Vector3(0.14, 0.12, 0.92), 0.0, 0.0, false, 1.0)
+			_box("timber", _mat_timber, base, Vector3(side_x * 1.015, side_y - 0.52, -d * 0.18),
+				Vector3(0.14, 0.12, 0.92), 0.0, 0.0, false, 1.0)
 
 	# Chimney.
 	var chimney_x := w * 0.32
