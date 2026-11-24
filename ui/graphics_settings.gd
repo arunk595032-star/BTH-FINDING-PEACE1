@@ -3,6 +3,7 @@ extends CanvasLayer
 
 var _main
 var _panel: PanelContainer
+var _root: Control
 var _mode: OptionButton
 var _preset: OptionButton
 var _controls: Dictionary = {}
@@ -21,13 +22,15 @@ func open_settings(mode: String, preset: String, values: Dictionary) -> void:
 	var idx := ["ultra", "high", "medium", "low"].find(preset)
 	_preset.select(maxi(idx, 0))
 	_sync_controls()
+	_root.visible = true
 	_panel.visible = true
 
 func _build() -> void:
-	var root := Control.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(root)
+	_root = Control.new()
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	_root.visible = false
+	add_child(_root)
 	_panel = PanelContainer.new()
 	_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_panel.offset_left = 12
@@ -35,7 +38,7 @@ func _build() -> void:
 	_panel.offset_right = -12
 	_panel.offset_bottom = -12
 	_panel.visible = false
-	root.add_child(_panel)
+	_root.add_child(_panel)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -83,8 +86,12 @@ func _build() -> void:
 	var close := Button.new()
 	close.text = "CLOSE"
 	close.custom_minimum_size.y = 52
-	close.pressed.connect(func(): _panel.visible = false)
+	close.pressed.connect(close_settings)
 	box.add_child(close)
+
+func close_settings() -> void:
+	_panel.visible = false
+	_root.visible = false
 
 func _add_slider(parent: VBoxContainer, title: String, key: String, low: float, high: float, step: float) -> void:
 	var label := Label.new()
