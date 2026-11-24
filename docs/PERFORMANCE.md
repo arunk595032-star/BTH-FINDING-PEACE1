@@ -10,7 +10,7 @@ same host for both commits (`docs/perf_baseline.json`, `docs/perf_after.json`).
 
 | Item | Value |
 |---|---|
-| CPU | QEMU Virtual CPU version 2.5+ (container VM), 8 vCPU visible |
+| CPU | AMD EPYC 7003 (Milan), 2 vCPU visible in the container |
 | GPU | **none** - `/dev/dri` and Vulkan ICD absent, no display |
 | Engine | Godot 4.7.stable.official.5b4e0cb0f, Forward+ project settings |
 | Renderer used for tests | **headless dummy renderer** (`--headless`) |
