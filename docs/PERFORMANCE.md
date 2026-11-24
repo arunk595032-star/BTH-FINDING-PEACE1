@@ -98,9 +98,11 @@ Interpretation:
 * **Separate collision trimesh cache** (LRU, 96 shapes) built from the lattice
   without normals/UVs. Collision is attached only within 232 m and removed beyond
   280 m (hysteresis), one chunk per detail tick so physics never spikes.
-* **Predictive, time-budgeted queue**: chunks within 448 m are queued, sorted by
-  `distance - forward_alignment * 140`, instantiated within a 4 ms per-frame
-  budget (2-3 chunks max), with the lattice already prepared ahead of time.
+* **Predictive, soft time-budgeted queue**: chunks within 448 m are queued,
+  sorted by `distance - forward_alignment * 140`, and instantiated with a
+  4 ms target and a 3-chunk cap. A chunk build is atomic: the first chunk in a
+  pump is allowed to finish even if it exceeds 4 ms, after which the pump stops.
+  The budget is therefore a soft target, not a hard frame-time guarantee.
 * **No duplicate generation**: pending set + cache checks; unload is
   farthest-first.
 
@@ -205,6 +207,9 @@ shadows, village and castle materials) is unchanged in settings.
   (0.35 s); the 232 m radius makes this invisible in normal play, but a
   teleport into a far chunk has up to 0.35 s without terrain collision (the
   spawn path and `force_detail_update()` are synchronous).
+* **Soft streaming budget**: the queue checks its 4 ms target between chunks.
+  A single atomic chunk instantiation (mesh + vegetation) can exceed that target;
+  the target limits additional work in the same pump but cannot pre-empt a build.
 * **Idle headless CPU 6.9 ms** is dummy-renderer scene sync, not script cost;
   a GPU run is required to know the real frame budget.
 
@@ -234,5 +239,7 @@ godot --headless --path . --quit-after 300
 
 The smoke test now also asserts: lattice cache identity and hit counting, LOD
 agreement with distance, collision only inside the activation radius, far tree
-LOD meshes exist, quality profiles apply to the live world, no streaming frame
-over 16 ms, and a 30+ chunk streaming radius.
+LOD meshes exist, quality profiles apply to the live world, no recorded normal
+streaming pump over 16 ms, and a 30+ chunk streaming radius. Forced bulk-drain
+helpers used by tests are excluded from runtime pump telemetry. The 4 ms queue
+budget is a soft target because an individual chunk build is atomic.
