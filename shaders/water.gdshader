@@ -10,15 +10,15 @@ uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D ripple_tex : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D sky_equirect : source_color, filter_linear_mipmap, repeat_enable;
 
-uniform vec3 shallow_color : source_color = vec3(0.10, 0.26, 0.24);
-uniform vec3 mid_color : source_color = vec3(0.035, 0.13, 0.15);
-uniform vec3 deep_color : source_color = vec3(0.012, 0.035, 0.045);
+uniform vec3 shallow_color : source_color = vec3(0.055, 0.22, 0.20);
+uniform vec3 mid_color : source_color = vec3(0.018, 0.085, 0.105);
+uniform vec3 deep_color : source_color = vec3(0.006, 0.022, 0.032);
 uniform float flow_speed = 0.55;
-uniform float wave_strength = 0.08;
-uniform float foam_amount = 0.75;
+uniform float wave_strength = 0.045;
+uniform float foam_amount = 0.28;
 uniform float clarity = 0.9;
-uniform float reflection_strength = 0.85;
-uniform float alpha_min = 0.72;
+uniform float reflection_strength = 0.24;
+uniform float alpha_min = 0.88;
 // Distant water keeps the depth colour, sky reflection and fresnel, but skips
 // the screen-space refraction sample, the second ripple layer and the foam
 // noise sample.  Near water is unchanged.
@@ -73,7 +73,7 @@ void fragment() {
 	vec3 refl_dir = reflect(-VIEW, NORMAL);
 	vec2 sky_uv = vec2(atan(refl_dir.z, refl_dir.x) / 6.2831853 + 0.5,
 		acos(clamp(refl_dir.y, -1.0, 1.0)) / 3.1415926);
-	vec3 reflected = textureLod(sky_equirect, sky_uv, 2.0).rgb;
+	vec3 reflected = min(textureLod(sky_equirect, sky_uv, 2.0).rgb, vec3(0.62));
 
 	vec3 body = mix(shallow_color, mid_color, smoothstep(0.15, 1.5, depth));
 	body = mix(body, deep_color, smoothstep(1.5, 5.0, depth));
@@ -82,8 +82,7 @@ void fragment() {
 	if (cam_dist >= detail_distance) {
 		refracted = body;
 	}
-	vec3 water_col = mix(refracted * 0.55 + body, reflected, fres * reflection_strength);
-	water_col = mix(water_col, reflected, fres * 0.35);
+	vec3 water_col = mix(body * 0.82 + refracted * 0.18, reflected, fres * reflection_strength);
 
 	// Foam: shoreline band plus streak noise on faster water.
 	float foam_noise = 0.55;
@@ -95,11 +94,11 @@ void fragment() {
 	foam += smoothstep(0.72, 0.95, foam_noise) * 0.25 * foam_amount * (1.0 - smoothstep(0.4, 3.0, depth));
 	foam = clamp(foam, 0.0, 1.0);
 
-	ALBEDO = mix(water_col, vec3(0.94, 0.97, 0.98), foam * 0.9);
-	ROUGHNESS = mix(0.035, 0.55, foam);
+	ALBEDO = mix(water_col, vec3(0.72, 0.82, 0.80), foam * 0.42);
+	ROUGHNESS = mix(0.16, 0.62, foam);
 	SPECULAR = 0.85;
 	METALLIC = 0.0;
-	EMISSION = body * 0.03 + foam * 0.02;
+	EMISSION = body * 0.008 + foam * 0.004;
 
 	float a = mix(alpha_min, 0.96, clamp(fres, 0.0, 1.0));
 	a = mix(a, 0.97, foam);
