@@ -100,9 +100,11 @@ func _run() -> void:
 	results["idle_frame"] = await _idle_frame_time()
 	results["inventory_after"] = _inventory()
 	results["memory_static_after_mb"] = _mb(Performance.get_monitor(Performance.MEMORY_STATIC))
-	results["monitor_draw_calls"] = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
-	results["monitor_objects"] = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
-	results["monitor_vram_mb"] = _mb(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED))
+	# Retain final-frame monitor values for compatibility; the idle-frame
+	# sample below also records distributions across the complete measurement window.
+	results["monitor_draw_calls_final_frame"] = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	results["monitor_objects_final_frame"] = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+	results["monitor_vram_mb_final_frame"] = _mb(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED))
 	results["world_perf"] = world.perf if world.get("perf") != null else {}
 
 	_write_json()
@@ -339,14 +341,32 @@ func _idle_frame_time() -> Dictionary:
 	for i in 60:
 		await get_tree().process_frame
 	var frames: Array[float] = []
+	var draw_calls: Array[float] = []
+	var render_objects: Array[float] = []
+	var video_mem_mb: Array[float] = []
+	var texture_mem_mb: Array[float] = []
+	var buffer_mem_mb: Array[float] = []
 	var prev := Time.get_ticks_usec()
 	for i in sample_frames:
 		await get_tree().process_frame
 		var now := Time.get_ticks_usec()
 		frames.append(_ms(now - prev))
 		prev = now
+		draw_calls.append(float(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
+		render_objects.append(float(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)))
+		video_mem_mb.append(_mb(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)))
+		texture_mem_mb.append(_mb(Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED)))
+		buffer_mem_mb.append(_mb(Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED)))
 	var avg_ms := _avg(frames)
 	var p99_ms := _percentile(frames, 0.99)
+	var render_monitors := {
+		"draw_calls_per_frame": _sample_stats(draw_calls),
+		"render_objects_per_frame": _sample_stats(render_objects),
+		"video_memory_mb": _sample_stats(video_mem_mb),
+		"texture_memory_mb": _sample_stats(texture_mem_mb),
+		"buffer_memory_mb": _sample_stats(buffer_mem_mb),
+		"sample_frames": sample_frames,
+	}
 	return {
 		"frames": frames.size(),
 		"frame_interval_avg_ms": avg_ms,
@@ -358,9 +378,21 @@ func _idle_frame_time() -> Dictionary:
 		# display. Headless dummy-renderer values are deliberately null.
 		"fps_avg_estimate": null if headless else 1000.0 / maxf(avg_ms, 0.001),
 		"fps_1_percent_low_estimate": null if headless else 1000.0 / maxf(p99_ms, 0.001),
-		"gpu_metrics_available": not headless,
+		"render_monitor_metrics_available": not headless,
+		"gpu_frame_time_available": false,
+		"render_monitors": render_monitors,
 		"pending_after": world.pending_chunks(),
 		"note": "headless: CPU-side frame intervals only; display run: approximate frame-pacing FPS, not isolated GPU time" if headless else "display run: approximate frame-pacing FPS; GPU time is not separately exposed by this harness",
+	}
+
+
+func _sample_stats(values: Array) -> Dictionary:
+	if values.is_empty():
+		return {"avg": -1.0, "p95": -1.0, "max": -1.0}
+	return {
+		"avg": _avg(values),
+		"p95": _percentile(values, 0.95),
+		"max": _max(values),
 	}
 
 
