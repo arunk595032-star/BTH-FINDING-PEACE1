@@ -72,7 +72,7 @@ func build(parent: Node3D) -> void:
 	kit.build_collision(root)
 	build_timings["collision_build_ms"] = float(Time.get_ticks_usec() - collision_started) / 1000.0
 	build_timings["total_ms"] = float(Time.get_ticks_usec() - build_started) / 1000.0
-	build_timings["geometry_batches"] = kit.mesh_data.size()
+	build_timings["geometry_batches"] = kit._surfaces.size()
 	build_timings["collision_boxes"] = kit.box_colliders.size()
 
 
