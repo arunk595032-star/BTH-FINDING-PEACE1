@@ -45,6 +45,8 @@ The touch layer is instantiated only on Android/iOS. Desktop keyboard and mouse 
 - Mobile sun uses a lower-energy neutral-warm light and two shadow splits instead of four, with a shorter shadow distance.
 - Mobile foliage receives subtle fill light to keep back-facing leaf cards readable; tree MultiMeshes do not cast shadows on mobile. Desktop foliage and tree shadows remain unchanged.
 - The village clearing radius is slightly smaller on mobile so a few more trees appear around the settlement edge without placing trees inside building pads.
+- Android Medium uses a dedicated lower render scale, shorter shadow range, reduced vegetation/terrain/water distances and a smaller streaming radius while retaining two-split shadows.
+- Android Low is a fallback performance mode: 0.62 3D scale, shadows/glow/AO/fog disabled, shorter view and collision ranges, reduced vegetation and water detail, and a 30 FPS native cap. These are Android-only overrides; PC Low and PC Ultra remain unchanged.
 - These are conservative controls. Dynamic resolution helps GPU-bound scenes; it cannot fix CPU-bound streaming or physics stalls.
 
 ## Frame generation / "AI frames"
