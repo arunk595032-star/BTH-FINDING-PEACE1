@@ -124,10 +124,10 @@ func _make_collision_shape(full_detail: bool) -> Shape3D:
 			var x1 := x0 + col_step
 			var z0 := float(gz) * col_step
 			var z1 := z0 + col_step
-			var h00 := field.height(_ox + x0, _oz + z0)
-			var h10 := field.height(_ox + x1, _oz + z0)
-			var h01 := field.height(_ox + x0, _oz + z1)
-			var h11 := field.height(_ox + x1, _oz + z1)
+			var h00: float = field.height(_ox + x0, _oz + z0)
+			var h10: float = field.height(_ox + x1, _oz + z0)
+			var h01: float = field.height(_ox + x0, _oz + z1)
+			var h11: float = field.height(_ox + x1, _oz + z1)
 			col_st.add_vertex(Vector3(x0, h00, z0))
 			col_st.add_vertex(Vector3(x1, h10, z0))
 			col_st.add_vertex(Vector3(x1, h11, z1))
