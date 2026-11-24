@@ -8,6 +8,7 @@ const Player = preload("res://player/player.gd")
 const HUD = preload("res://ui/hud.gd")
 const GraphicsSettings = preload("res://ui/graphics_settings.gd")
 const MobileTouchControls = preload("res://ui/mobile_touch_controls.gd")
+const MobileFramePacer = preload("res://scripts/core/mobile_frame_pacer.gd")
 
 var world
 var player
@@ -19,6 +20,7 @@ var quality: Dictionary = Quality.PROFILES["ultra"].duplicate(true)
 var platform_mode := "pc"
 var graphics_settings
 var mobile_touch_controls
+var mobile_frame_pacer
 
 
 func _ready() -> void:
@@ -53,6 +55,11 @@ func _ready() -> void:
 	quality_name = Quality.resolve_saved_name()
 	quality.merge(Quality.load_settings(), true)
 	_apply_quality_values()
+	if is_mobile:
+		mobile_frame_pacer = MobileFramePacer.new()
+		mobile_frame_pacer.name = "MobileFramePacer"
+		add_child(mobile_frame_pacer)
+		mobile_frame_pacer.configure(get_viewport(), quality)
 	graphics_settings = GraphicsSettings.new()
 	graphics_settings.name = "GraphicsSettings"
 	add_child(graphics_settings)
@@ -104,6 +111,8 @@ func apply_quality(name: String, announce := true) -> void:
 					c.z - world.player.global_position.z).length()
 				world.vegetation.apply_lod(chunk, d)
 
+	if mobile_frame_pacer != null:
+		mobile_frame_pacer.set_profile(quality)
 	if hud != null:
 		hud.set_quality(name, "%s / %s" % [platform_mode.to_upper(), str(quality["label"])])
 	if announce:
@@ -157,6 +166,8 @@ func _apply_quality_values() -> void:
 				var center: Vector3 = chunk.world_center()
 				var distance := Vector2(center.x - world.player.global_position.x, center.z - world.player.global_position.z).length()
 				world.vegetation.apply_lod(chunk, distance)
+	if mobile_frame_pacer != null:
+		mobile_frame_pacer.set_profile(quality)
 	if hud != null:
 		hud.set_quality(quality_name, "%s / %s" % [platform_mode.to_upper(), str(quality.get("label", "Custom"))])
 
