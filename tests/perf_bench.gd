@@ -359,14 +359,16 @@ func _idle_frame_time() -> Dictionary:
 		buffer_mem_mb.append(_mb(Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED)))
 	var avg_ms := _avg(frames)
 	var p99_ms := _percentile(frames, 0.99)
-	var render_monitors := {
-		"draw_calls_per_frame": _sample_stats(draw_calls),
-		"render_objects_per_frame": _sample_stats(render_objects),
-		"video_memory_mb": _sample_stats(video_mem_mb),
-		"texture_memory_mb": _sample_stats(texture_mem_mb),
-		"buffer_memory_mb": _sample_stats(buffer_mem_mb),
-		"sample_frames": sample_frames,
-	}
+	var render_monitors = null
+	if not headless:
+		render_monitors = {
+			"draw_calls_per_frame": _sample_stats(draw_calls),
+			"render_objects_per_frame": _sample_stats(render_objects),
+			"video_memory_mb": _sample_stats(video_mem_mb),
+			"texture_memory_mb": _sample_stats(texture_mem_mb),
+			"buffer_memory_mb": _sample_stats(buffer_mem_mb),
+			"sample_frames": sample_frames,
+		}
 	return {
 		"frames": frames.size(),
 		"frame_interval_avg_ms": avg_ms,
