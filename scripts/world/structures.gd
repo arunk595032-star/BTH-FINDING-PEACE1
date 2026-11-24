@@ -17,6 +17,7 @@ var field
 var kit
 var root: Node3D
 var stats := {"houses": 0, "bridges": 0, "landmarks": 0, "props": 0}
+var build_timings := {}
 
 var _mat_stone: StandardMaterial3D
 var _mat_brick: StandardMaterial3D
@@ -49,22 +50,36 @@ func setup(p_field: RefCounted) -> void:
 
 
 func build(parent: Node3D) -> void:
+	var build_started := Time.get_ticks_usec()
 	kit = MeshKit.new()
 	root = Node3D.new()
 	root.name = "Settlements"
 	parent.add_child(root)
-	_build_village()
-	_build_farmland()
-	_build_castle()
-	_build_hamlet()
-	_build_watchtower()
-	_build_ruins()
-	_build_camp()
-	_build_cave()
-	_build_bridges()
-	_spawn_hero_props()
+	_measure_stage("village_ms", Callable(self, "_build_village"))
+	_measure_stage("farmland_ms", Callable(self, "_build_farmland"))
+	_measure_stage("castle_ms", Callable(self, "_build_castle"))
+	_measure_stage("hamlet_ms", Callable(self, "_build_hamlet"))
+	_measure_stage("watchtower_ms", Callable(self, "_build_watchtower"))
+	_measure_stage("ruins_ms", Callable(self, "_build_ruins"))
+	_measure_stage("camp_ms", Callable(self, "_build_camp"))
+	_measure_stage("cave_ms", Callable(self, "_build_cave"))
+	_measure_stage("bridges_ms", Callable(self, "_build_bridges"))
+	_measure_stage("hero_props_ms", Callable(self, "_spawn_hero_props"))
+	var commit_started := Time.get_ticks_usec()
 	kit.commit(root)
+	build_timings["mesh_commit_ms"] = float(Time.get_ticks_usec() - commit_started) / 1000.0
+	var collision_started := Time.get_ticks_usec()
 	kit.build_collision(root)
+	build_timings["collision_build_ms"] = float(Time.get_ticks_usec() - collision_started) / 1000.0
+	build_timings["total_ms"] = float(Time.get_ticks_usec() - build_started) / 1000.0
+	build_timings["geometry_batches"] = kit._surfaces.size()
+	build_timings["collision_boxes"] = kit.box_colliders.size()
+
+
+func _measure_stage(label: String, action: Callable) -> void:
+	var started := Time.get_ticks_usec()
+	action.call()
+	build_timings[label] = float(Time.get_ticks_usec() - started) / 1000.0
 
 
 # ---------------------------------------------------------------------------
