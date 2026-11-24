@@ -420,11 +420,11 @@ func _print_summary() -> void:
 		results["idle_frame"]["frame_interval_avg_ms"],
 		results["idle_frame"]["frame_interval_p99_ms"]])
 	if results["idle_frame"]["fps_avg_estimate"] != null:
-		print("  FPS avg / 1%% low est. %.1f / %.1f" % [
+		print("  FPS avg / 1 percent low est. %.1f / %.1f" % [
 			float(results["idle_frame"]["fps_avg_estimate"]),
 			float(results["idle_frame"]["fps_1_percent_low_estimate"])])
 	else:
-		print("  FPS / 1%% low          unavailable (headless)")
+		print("  FPS / 1 percent low    unavailable (headless)")
 	print("  mesh %d  multimesh %d  surfaces %d  shadow casters %d" % [
 		results["inventory"]["mesh_instances"], results["inventory"]["multimesh_instances"],
 		results["inventory"]["surface_draw_proxy"], results["inventory"]["shadow_casters"]])
