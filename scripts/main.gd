@@ -78,6 +78,7 @@ func apply_quality(name: String, announce := true) -> void:
 		name = Quality.default_profile(platform_mode)
 	quality_name = name
 	quality = Quality.profile(name)
+	_apply_mobile_quality_budget()
 	quality_name = name
 
 	var vp := get_viewport()
@@ -177,6 +178,54 @@ func _unhandled_input(event: InputEvent) -> void:
 			and not (event as InputEventKey).echo \
 			and (event as InputEventKey).keycode == KEY_F1:
 		apply_quality(Quality.next(quality_name))
+
+
+func _apply_mobile_quality_budget() -> void:
+	if not _is_mobile_platform():
+		return
+	# Keep PC profiles untouched. Medium preserves shadows; Low removes the costly mobile shadow pass.
+	if quality_name == "low":
+		quality.merge({
+			"render_scale": 0.62,
+			"shadows": false,
+			"shadow_distance": 0.0,
+			"ssao": false,
+			"ssil": false,
+			"volumetric_fog": false,
+			"glow": false,
+			"stream_radius": 192.0,
+			"chunk_budget": 1,
+			"stream_budget_us": 1400,
+			"collision_radius": 112.0,
+			"terrain_lod_near": 88.0,
+			"terrain_lod_mid": 152.0,
+			"terrain_detail_distance": 34.0,
+			"vegetation_scale": 0.42,
+			"tree_end": 360.0,
+			"tree_lod": 82.0,
+			"water_detail_distance": 32.0,
+			"mist_amount": 24,
+			"max_fps": 30
+		}, true)
+	elif quality_name == "medium":
+		quality.merge({
+			"render_scale": 0.76,
+			"shadow_distance": 150.0,
+			"shadow_blur": 0.6,
+			"stream_radius": 264.0,
+			"chunk_budget": 2,
+			"stream_budget_us": 2000,
+			"collision_radius": 148.0,
+			"terrain_lod_near": 126.0,
+			"terrain_lod_mid": 218.0,
+			"terrain_detail_distance": 52.0,
+			"vegetation_scale": 0.62,
+			"tree_end": 520.0,
+			"tree_lod": 126.0,
+			"water_detail_distance": 48.0,
+			"mist_amount": 38,
+			"max_fps": 45
+		}, true)
 
 
 func _is_mobile_platform() -> bool:
